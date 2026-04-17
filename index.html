@@ -1278,7 +1278,8 @@ function PastReflectionsPanel({
     if (!pe.length) return [];
     const allLogged = logs.map(l => l.passage);
     function isDone(e) {
-      return e.passages.every(p => passageChapters(p).every(ch => allLogged.includes(ch)));
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.every(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch)));
     }
     if (plan.start_date) {
       const currentDay = currentDayNumber(plan, pe.length);
@@ -1464,7 +1465,8 @@ function HomeScreen({
     if (!pe.length) return [];
     const allLogged = logs.map(l => l.passage);
     function isDone(e) {
-      return e.passages.every(p => passageChapters(p).every(ch => allLogged.includes(ch)));
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.every(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch)));
     }
     if (plan.start_date) {
       const currentDay = currentDayNumber(plan, pe.length);
@@ -1482,10 +1484,13 @@ function HomeScreen({
     }
   });
 
-  // Which of today's assigned passages are fully completed
+  // Which of today's assigned passages are fully completed (entry-scoped)
   const completedLabels = activePlans.flatMap(plan => {
     const pe = entries.filter(e => e.plan_id === plan.id);
-    return pe.flatMap(e => e.passages.filter(p => passageChapters(p).every(ch => completedPassages.includes(ch))).map(p => passageLabel(p)));
+    return pe.flatMap(e => {
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.filter(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch))).map(p => passageLabel(p));
+    });
   });
 
   // All reflections for today (multiple allowed)
@@ -1513,7 +1518,8 @@ function HomeScreen({
     if (!pe.length) return [];
     const allLogged = logs.map(l => l.passage);
     function isDone(e) {
-      return e.passages.every(p => passageChapters(p).every(ch => allLogged.includes(ch)));
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.every(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch)));
     }
     if (plan.start_date) {
       const currentDay = currentDayNumber(plan, pe.length);
@@ -1536,17 +1542,18 @@ function HomeScreen({
   }
   async function togglePassage(passageObj, entryId, assignedDate) {
     const chapters = passageChapters(passageObj);
-    // Use assignedDate if provided (overdue entries), otherwise today
     const logDate = assignedDate || today;
-    const allLogged = chapters.every(ch => logs.find(l => l.passage === ch));
+    // Scope to this specific entry — don't match logs from other entries/days
+    const entryLogs = logs.filter(l => l.entry_id === entryId);
+    const allLogged = chapters.every(ch => entryLogs.find(l => l.passage === ch));
     if (allLogged) {
       for (const ch of chapters) {
-        const ex = logs.find(l => l.passage === ch);
+        const ex = entryLogs.find(l => l.passage === ch);
         if (ex) await dbDelete("reading_logs", ex.id);
       }
     } else {
       for (const ch of chapters) {
-        const already = logs.find(l => l.passage === ch);
+        const already = entryLogs.find(l => l.passage === ch);
         if (!already) await dbPut("reading_logs", {
           id: uuid(),
           entry_id: entryId,
@@ -1559,11 +1566,11 @@ function HomeScreen({
     refresh();
   }
   async function skipEntry(entry, plan) {
-    // Mark all passages as logged on that entry's scheduled date so it's "done"
     const assignedDate = entryDate(plan, entry.day_number) || today;
+    const eLogs = logs.filter(l => l.entry_id === entry.id);
     for (const p of entry.passages) {
       for (const ch of passageChapters(p)) {
-        const already = logs.find(l => l.passage === ch);
+        const already = eLogs.find(l => l.passage === ch);
         if (!already) await dbPut("reading_logs", {
           id: uuid(),
           entry_id: entry.id,
@@ -1677,7 +1684,6 @@ function HomeScreen({
     title: "No active plans",
     body: "Add a reading plan in the Plans tab to begin."
   }) : activePlans.map(plan => {
-    const allLogged = logs.map(l => l.passage);
     const pendingEntries = getPendingEntries(plan);
     if (!pendingEntries.length) return null;
     const pe = entries.filter(e => e.plan_id === plan.id);
@@ -1685,8 +1691,12 @@ function HomeScreen({
     const overdueEntries = pendingEntries.filter(e => plan.start_date && e.day_number < currentDay);
     const overdueCount = overdueEntries.length;
 
-    // Check if everything showing is done
-    const allDone = pendingEntries.every(e => e.passages.every(p => passageChapters(p).every(ch => allLogged.includes(ch))));
+    // Entry-scoped done check
+    function entryIsDone(e) {
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.every(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch)));
+    }
+    const allDone = pendingEntries.every(entryIsDone);
     return /*#__PURE__*/React.createElement("div", {
       key: plan.id,
       style: {
@@ -1734,7 +1744,8 @@ function HomeScreen({
     }, "Day ", currentDay))), pendingEntries.map((entry, entryIdx) => {
       const isOverdue = plan.start_date && entry.day_number < currentDay;
       const assignedDate = entryDate(plan, entry.day_number);
-      const entryDone = entry.passages.every(p => passageChapters(p).every(ch => allLogged.includes(ch)));
+      const eLogs = logs.filter(l => l.entry_id === entry.id);
+      const entryDone = entryIsDone(entry);
       const isLast = entryIdx === pendingEntries.length - 1;
       return /*#__PURE__*/React.createElement("div", {
         key: entry.id
@@ -1785,7 +1796,7 @@ function HomeScreen({
       }, "Skip")), entry.passages.map((passage, idx) => {
         const chapters = passageChapters(passage);
         const label = passageLabel(passage);
-        const doneCount = chapters.filter(ch => allLogged.includes(ch)).length;
+        const doneCount = chapters.filter(ch => eLogs.some(l => l.passage === ch)).length;
         const done = doneCount === chapters.length;
         const partial = doneCount > 0 && !done;
         return /*#__PURE__*/React.createElement("button", {
