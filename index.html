@@ -2351,11 +2351,12 @@ function PlansScreen({
     setShowUpload(false);
     refresh();
   }
-  const [editingEntry, setEditingEntry] = useState(null); // entry id being edited
-  const [editPassageText, setEditPassageText] = useState(""); // raw passage lines
+  const [editingEntry, setEditingEntry] = useState(null);
+  const [editPassageText, setEditPassageText] = useState("");
   const [editingPlanMeta, setEditingPlanMeta] = useState(false);
   const [editPlanTitle, setEditPlanTitle] = useState("");
   const [editStartDate, setEditStartDate] = useState("");
+  const [shiftDays, setShiftDays] = useState(0);
   async function saveEntryEdit(entry) {
     const lines = editPassageText.split("\n").map(l => l.trim()).filter(Boolean);
     const newPassages = lines.map(label => ({
@@ -2370,17 +2371,47 @@ function PlansScreen({
     refresh();
   }
   async function savePlanMeta() {
+    let finalDate = editStartDate || selected.start_date;
+    if (shiftDays !== 0 && finalDate) {
+      finalDate = addDays(finalDate, shiftDays);
+    }
     await dbPut("plans", {
       ...selected,
       title: editPlanTitle.trim() || selected.title,
-      start_date: editStartDate || selected.start_date
+      start_date: finalDate
     });
     setSelected(s => ({
       ...s,
       title: editPlanTitle.trim() || s.title,
-      start_date: editStartDate || s.start_date
+      start_date: finalDate
     }));
     setEditingPlanMeta(false);
+    setShiftDays(0);
+    refresh();
+  }
+  async function reAnchorToday() {
+    // Find the first unread entry — set start_date so that entry falls on today
+    const pe = entries.filter(e => e.plan_id === selected.id).sort((a, b) => a.day_number - b.day_number);
+    function isDoneE(e) {
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return e.passages.every(p => passageChapters(p).every(ch => eLogs.some(l => l.passage === ch)));
+    }
+    const firstUnread = pe.find(e => !isDoneE(e)) || pe[0];
+    if (!firstUnread) return;
+    // new start_date = today - (firstUnread.day_number - 1)
+    const newStart = addDays(todayStr(), -(firstUnread.day_number - 1));
+    await dbPut("plans", {
+      ...selected,
+      start_date: newStart,
+      active: true
+    });
+    setSelected(s => ({
+      ...s,
+      start_date: newStart,
+      active: true
+    }));
+    setEditingPlanMeta(false);
+    setShiftDays(0);
     refresh();
   }
   if (selected) {
@@ -2390,7 +2421,10 @@ function PlansScreen({
     if (editingPlanMeta) return /*#__PURE__*/React.createElement("div", {
       style: ss.screen
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setEditingPlanMeta(false),
+      onClick: () => {
+        setEditingPlanMeta(false);
+        setShiftDays(0);
+      },
       style: ss.back
     }, /*#__PURE__*/React.createElement(Icon, {
       name: "chevronLeft",
@@ -2421,19 +2455,165 @@ function PlansScreen({
         color: C.muted,
         fontFamily: F.sans
       }
-    }, "Start date"), /*#__PURE__*/React.createElement("input", {
+    }, "Start date ", /*#__PURE__*/React.createElement("span", {
+      style: {
+        opacity: 0.6
+      }
+    }, "(Day 1 = this date)")), /*#__PURE__*/React.createElement("input", {
       type: "date",
       value: editStartDate,
       onChange: e => setEditStartDate(e.target.value),
       style: ss.input
     })), /*#__PURE__*/React.createElement("div", {
       style: {
+        ...ss.card,
+        padding: "14px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 14,
+        fontWeight: 500,
+        color: C.ink
+      }
+    }, "Shift plan"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans,
+        lineHeight: 1.5
+      }
+    }, "Move all readings forward or backward by days. Adjusts the start date \u2014 no entries are changed."), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => setShiftDays(d => d - 1),
+      style: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        border: `1px solid ${C.border}`,
+        background: C.warm,
+        fontSize: 18,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: C.brown,
+        fontFamily: F.sans
+      }
+    }, "\u2212"), /*#__PURE__*/React.createElement("div", {
+      style: {
+        flex: 1,
+        textAlign: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 22,
+        fontWeight: 500,
+        color: shiftDays === 0 ? C.muted : shiftDays > 0 ? C.green : C.red
+      }
+    }, shiftDays > 0 ? `+${shiftDays}` : shiftDays), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 10,
+        color: C.muted,
+        fontFamily: F.sans,
+        marginTop: 2
+      }
+    }, shiftDays === 0 ? "no change" : shiftDays > 0 ? "days forward" : "days backward")), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setShiftDays(d => d + 1),
+      style: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        border: `1px solid ${C.border}`,
+        background: C.warm,
+        fontSize: 18,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: C.brown,
+        fontFamily: F.sans
+      }
+    }, "+")), shiftDays !== 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#f5f1eb",
+        borderRadius: 8,
+        padding: "8px 12px"
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans
+      }
+    }, "New start date: ", /*#__PURE__*/React.createElement("strong", {
+      style: {
+        color: C.ink
+      }
+    }, editStartDate ? addDays(editStartDate, shiftDays) : selected.start_date ? addDays(selected.start_date, shiftDays) : "—"))), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setShiftDays(0),
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        alignSelf: "flex-start",
+        padding: "4px 10px"
+      }
+    }, "Reset")), /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...ss.card,
+        padding: "14px 16px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 14,
+        fontWeight: 500,
+        color: C.ink
+      }
+    }, "Re-anchor to today"), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans,
+        lineHeight: 1.5
+      }
+    }, "Sets today as your next unread day. Use this if you've taken a long break and want to pick up from today rather than catching up on missed days."), /*#__PURE__*/React.createElement("button", {
+      onClick: reAnchorToday,
+      style: {
+        ...ss.btnGhost,
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        alignSelf: "flex-start"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "sun",
+      size: 13,
+      color: "#6b5f54",
+      strokeWidth: 1.75
+    }), "Start from today")), /*#__PURE__*/React.createElement("div", {
+      style: {
         display: "flex",
         gap: 8,
         justifyContent: "flex-end"
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setEditingPlanMeta(false),
+      onClick: () => {
+        setEditingPlanMeta(false);
+        setShiftDays(0);
+      },
       style: ss.btnGhost
     }, "Cancel"), /*#__PURE__*/React.createElement("button", {
       onClick: savePlanMeta,
