@@ -1455,6 +1455,7 @@ function HomeScreen({
   const [reflectionText, setReflectionText] = useState("");
   const [selectedPassages, setSelectedPassages] = useState(null);
   const [manualTagInput, setManualTagInput] = useState("");
+  const [overdueStampModes, setOverdueStampModes] = useState({}); // entry.id → "today"|"assigned"
   const today = todayStr();
   const completedPassages = logs.filter(l => l.completed_at.startsWith(today)).map(l => l.passage);
   const activePlans = plans.filter(p => p.active);
@@ -1747,6 +1748,12 @@ function HomeScreen({
       const eLogs = logs.filter(l => l.entry_id === entry.id);
       const entryDone = entryIsDone(entry);
       const isLast = entryIdx === pendingEntries.length - 1;
+
+      // For overdue entries: default to stamping with today,
+      // unless user switches to "read on time" (assigned date)
+      // Key: entry.id → "today" | "assigned"
+      const stampMode = overdueStampModes[entry.id] || "today";
+      const effectiveDate = !isOverdue || stampMode === "today" ? null : assignedDate;
       return /*#__PURE__*/React.createElement("div", {
         key: entry.id
       }, /*#__PURE__*/React.createElement("div", {
@@ -1781,19 +1788,62 @@ function HomeScreen({
           fontFamily: F.sans,
           fontWeight: isOverdue ? 600 : 400
         }
-      }, "Day ", entry.day_number, assignedDate ? ` · ${fmtShort(assignedDate)}` : "")), isOverdue && !entryDone && /*#__PURE__*/React.createElement("button", {
+      }, "Day ", entry.day_number, assignedDate ? ` · ${fmtShort(assignedDate)}` : "")), isOverdue && !entryDone && /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 5
+        }
+      }, /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex",
+          borderRadius: 10,
+          overflow: "hidden",
+          border: `1px solid ${C.border}`
+        }
+      }, /*#__PURE__*/React.createElement("button", {
+        onClick: () => setOverdueStampModes(m => ({
+          ...m,
+          [entry.id]: "today"
+        })),
+        style: {
+          fontSize: 10,
+          padding: "3px 8px",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: F.sans,
+          background: stampMode === "today" ? C.brown : "white",
+          color: stampMode === "today" ? "white" : C.muted,
+          transition: "all 0.15s"
+        }
+      }, "Today"), /*#__PURE__*/React.createElement("button", {
+        onClick: () => setOverdueStampModes(m => ({
+          ...m,
+          [entry.id]: "assigned"
+        })),
+        style: {
+          fontSize: 10,
+          padding: "3px 8px",
+          border: "none",
+          cursor: "pointer",
+          fontFamily: F.sans,
+          background: stampMode === "assigned" ? C.brown : "white",
+          color: stampMode === "assigned" ? "white" : C.muted,
+          transition: "all 0.15s"
+        }
+      }, "On time")), /*#__PURE__*/React.createElement("button", {
         onClick: () => skipEntry(entry, plan),
         style: {
-          fontSize: 11,
+          fontSize: 10,
           color: C.muted,
           background: "none",
           border: `1px solid ${C.border}`,
           borderRadius: 10,
-          padding: "2px 9px",
+          padding: "3px 9px",
           cursor: "pointer",
           fontFamily: F.sans
         }
-      }, "Skip")), entry.passages.map((passage, idx) => {
+      }, "Skip"))), entry.passages.map((passage, idx) => {
         const chapters = passageChapters(passage);
         const label = passageLabel(passage);
         const doneCount = chapters.filter(ch => eLogs.some(l => l.passage === ch)).length;
@@ -1815,7 +1865,7 @@ function HomeScreen({
             borderBottom: idx < entry.passages.length - 1 ? "1px solid #f5f1eb" : "none",
             transition: "background 0.15s"
           },
-          onClick: () => togglePassage(passage, entry.id, assignedDate)
+          onClick: () => togglePassage(passage, entry.id, effectiveDate)
         }, /*#__PURE__*/React.createElement("div", {
           style: {
             width: 22,
