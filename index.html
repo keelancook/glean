@@ -996,18 +996,18 @@ function ScriptureDesk() {
       justifyContent: "center",
       height: "100vh",
       background: C.ink,
-      gap: 18
+      gap: 24
     }
   }, /*#__PURE__*/React.createElement(WheatMark, {
-    size: 28,
+    size: 80,
     color: C.gold
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: F.serif,
       color: C.warm,
-      fontSize: 14,
-      opacity: 0.5,
-      letterSpacing: "0.1em"
+      fontSize: 22,
+      opacity: 0.7,
+      letterSpacing: "0.12em"
     }
   }, "Glean"));
   const streak = calcStreak(logs);
@@ -1038,12 +1038,12 @@ function ScriptureDesk() {
       gap: 10
     }
   }, /*#__PURE__*/React.createElement(WheatMark, {
-    size: 24,
+    size: 26,
     color: C.gold
   }), /*#__PURE__*/React.createElement("span", {
     style: {
       fontFamily: F.serif,
-      fontSize: 17,
+      fontSize: 24,
       fontWeight: 600,
       color: C.warm,
       letterSpacing: "0.02em"
@@ -1437,6 +1437,62 @@ function PastReflectionsPanel({
     key: r.id,
     r: r
   }))));
+}
+
+// ── Gleaning card with expand/collapse ───────────────────────────────────────
+const GLEANING_PREVIEW = 180;
+function GleaningCard({
+  r
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = r.body.length > GLEANING_PREVIEW;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...ss.card,
+      padding: "12px 14px"
+    }
+  }, r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4,
+      marginBottom: 8
+    }
+  }, r.passages.map(p => /*#__PURE__*/React.createElement("span", {
+    key: p,
+    style: ss.tag
+  }, p))), /*#__PURE__*/React.createElement(MarkdownRenderer, {
+    text: expanded || !isLong ? r.body : r.body.slice(0, GLEANING_PREVIEW) + "…"
+  }), isLong && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setExpanded(e => !e),
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: "6px 0 0",
+      fontFamily: F.sans,
+      fontSize: 12,
+      color: C.brown,
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "12",
+    height: "12",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    style: {
+      transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+      transition: "transform 0.2s"
+    }
+  }, /*#__PURE__*/React.createElement("polyline", {
+    points: "6 9 12 15 18 9"
+  })), expanded ? "Show less" : "Read more"));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1988,25 +2044,10 @@ function HomeScreen({
       color: C.brown,
       fontFamily: F.sans
     }
-  }, "Add"))), todayReflections.map(r => /*#__PURE__*/React.createElement("div", {
+  }, "Add"))), todayReflections.map(r => /*#__PURE__*/React.createElement(GleaningCard, {
     key: r.id,
-    style: {
-      ...ss.card,
-      padding: "12px 14px"
-    }
-  }, r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 4,
-      marginBottom: 8
-    }
-  }, r.passages.map(p => /*#__PURE__*/React.createElement("span", {
-    key: p,
-    style: ss.tag
-  }, p))), /*#__PURE__*/React.createElement(MarkdownRenderer, {
-    text: r.body.slice(0, 180) + (r.body.length > 180 ? "…" : "")
-  }))), showReflection && /*#__PURE__*/React.createElement("div", {
+    r: r
+  })), showReflection && /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
       padding: 14,
@@ -3762,21 +3803,32 @@ function SermonsScreen({
     value: form.date,
     onChange: e => upd("date", e.target.value),
     style: ss.input
-  }), /*#__PURE__*/React.createElement(PdfUploadButton, {
-    onExtract: extracted => upd("notes", extracted),
-    onMeta: ({
+  }), /*#__PURE__*/React.createElement(MdSermonImportButton, {
+    onImport: ({
       title: t,
       preacher: pr,
-      passage: pa
+      passage: pa,
+      series: se,
+      venue: ve,
+      date: dt,
+      source_url: su,
+      tags: tg,
+      notes: no
     }) => {
-      if (!form.title.trim() && t) upd("title", t);
-      if (!form.preacher.trim() && pr) upd("preacher", pr);
-      if (!form.passage.trim() && pa) upd("passage", pa);
+      if (t) upd("title", t);
+      if (pr) upd("preacher", pr);
+      if (pa) upd("passage", pa);
+      if (se) upd("series", se);
+      if (ve) upd("venue", ve);
+      if (dt) upd("date", dt);
+      if (su) upd("source_url", su);
+      if (tg) upd("tags", tg);
+      if (no) upd("notes", no);
     }
   }), /*#__PURE__*/React.createElement(MarkdownEditor, {
     value: form.notes,
     onChange: v => upd("notes", v),
-    placeholder: "Sermon notes\u2026 or import a PDF above",
+    placeholder: "Sermon notes\u2026 or import a markdown file above",
     rows: 5,
     minHeight: 120
   }), /*#__PURE__*/React.createElement("div", {
@@ -4322,6 +4374,123 @@ function MdFileButton({
       fontFamily: F.sans
     }
   }, "or paste manually"));
+}
+function MdSermonImportButton({
+  onImport
+}) {
+  const ref = useRef(null);
+  const [status, setStatus] = useState(null);
+  function parseSermonMd(text) {
+    // Parse YAML frontmatter between --- delimiters
+    const fmMatch = text.match(/^---\n([\s\S]*?)\n---/);
+    const result = {
+      title: "",
+      preacher: "",
+      passage: "",
+      series: "",
+      venue: "",
+      date: "",
+      source_url: "",
+      tags: "",
+      notes: ""
+    };
+    if (fmMatch) {
+      const fm = fmMatch[1];
+      // Parse each key: value line — handles quoted and unquoted values
+      const lines = fm.split("\n");
+      for (const line of lines) {
+        const m = line.match(/^(\w+(?:_\w+)*):\s*"?([^"]*)"?\s*$/);
+        if (!m) continue;
+        const [, key, val] = m;
+        const v = val.trim();
+        if (key === "title") result.title = v;
+        if (key === "preacher") result.preacher = v;
+        if (key === "passage") result.passage = v;
+        if (key === "series") result.series = v;
+        if (key === "venue") result.venue = v;
+        if (key === "date") result.date = v;
+        if (key === "source_url") result.source_url = v;
+        if (key === "tags") {
+          // Handle array format: [tag1, tag2] or plain string
+          result.tags = v.replace(/^\[|\]$/g, "").replace(/['"]/g, "").trim();
+        }
+      }
+      // Body = everything after the closing ---
+      result.notes = text.slice(fmMatch[0].length).replace(/^\n+/, "").trim();
+    } else {
+      // No frontmatter — treat entire file as notes, try to extract title from # heading
+      const titleMatch = text.match(/^#\s+(.+)/m);
+      if (titleMatch) result.title = titleMatch[1].trim();
+      result.notes = text.trim();
+    }
+    return result;
+  }
+  function handleChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";
+    setStatus("loading");
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const parsed = parseSermonMd(ev.target.result);
+        onImport(parsed);
+        setStatus("done");
+      } catch (err) {
+        console.error(err);
+        setStatus("error");
+      }
+    };
+    reader.onerror = () => setStatus("error");
+    reader.readAsText(file);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: ref,
+    type: "file",
+    accept: ".md,.txt",
+    onChange: handleChange,
+    style: {
+      display: "none"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => ref.current?.click(),
+    style: {
+      ...ss.btnGhost,
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "upload2",
+    size: 13,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), /*#__PURE__*/React.createElement("span", null, "Import markdown notes")), status === "done" && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.green,
+      fontFamily: F.sans
+    }
+  }, "Imported \u2014 review below"), status === "error" && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.red,
+      fontFamily: F.sans
+    }
+  }, "Import failed"), !status && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.muted,
+      fontFamily: F.sans
+    }
+  }, "optional"));
 }
 function PdfUploadButton({
   onExtract,
