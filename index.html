@@ -553,6 +553,16 @@ async function dbPut(store, item) {
     r.onerror = () => rej(r.error);
   });
 }
+async function dbPutMany(store, items) {
+  const db = await openDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, "readwrite");
+    const os = tx.objectStore(store);
+    items.forEach(item => os.put(item));
+    tx.oncomplete = () => res();
+    tx.onerror = () => rej(tx.error);
+  });
+}
 async function dbDelete(store, id) {
   const db = await openDB();
   return new Promise((res, rej) => {
@@ -2457,33 +2467,48 @@ function PlansScreen({
   const [markdown, setMarkdown] = useState("");
   const [newPlanStartDate, setNewPlanStartDate] = useState(new Date().getFullYear() + "-01-01");
   const [selected, setSelected] = useState(null);
+  const [saveError, setSaveError] = useState(null);
+  const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
   async function savePlan(activate) {
     if (!title.trim() || !markdown.trim()) return;
-    const {
-      plan,
-      entries: ne
-    } = parseMarkdownPlan(title.trim(), markdown.trim());
-    let finalPlan = plan; // inactive by default
-    if (activate && newPlanStartDate) {
-      finalPlan = {
-        ...plan,
-        start_date: newPlanStartDate,
-        active: true
-      };
-    } else if (activate) {
-      finalPlan = {
-        ...plan,
-        active: true
-      };
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const {
+        plan,
+        entries: ne
+      } = parseMarkdownPlan(title.trim(), markdown.trim());
+      let finalPlan = plan;
+      if (activate && newPlanStartDate) {
+        finalPlan = {
+          ...plan,
+          start_date: newPlanStartDate,
+          active: true
+        };
+      } else if (activate) {
+        finalPlan = {
+          ...plan,
+          active: true
+        };
+      }
+      await dbPut("plans", finalPlan);
+      // Write entries in chunks to avoid transaction timeout on large plans
+      const CHUNK = 50;
+      for (let i = 0; i < ne.length; i += CHUNK) {
+        await dbPutMany("plan_entries", ne.slice(i, i + CHUNK));
+      }
+      setTitle("");
+      setMarkdown("");
+      setNewPlanStartDate(new Date().getFullYear() + "-01-01");
+      setShowUpload(false);
+      refresh();
+    } catch (err) {
+      console.error("Save plan error:", err);
+      setSaveError("Save failed — " + (err.message || "unknown error"));
+    } finally {
+      setSaving(false);
     }
-    await dbPut("plans", finalPlan);
-    for (const e of ne) await dbPut("plan_entries", e);
-    setTitle("");
-    setMarkdown("");
-    setNewPlanStartDate(new Date().getFullYear() + "-01-01");
-    setShowUpload(false);
-    refresh();
   }
   const [editingEntry, setEditingEntry] = useState(null);
   const [editPassageText, setEditPassageText] = useState("");
@@ -3018,19 +3043,41 @@ function PlansScreen({
   }, "Load sample"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
-      gap: 8
+      gap: 8,
+      alignItems: "center"
     }
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowUpload(false),
+  }, saving && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.muted,
+      fontFamily: F.sans
+    }
+  }, "Saving\u2026"), saveError && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.red,
+      fontFamily: F.sans
+    }
+  }, saveError), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setShowUpload(false);
+      setSaveError(null);
+    },
     style: ss.btnGhost
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     onClick: () => savePlan(false),
+    disabled: saving,
     style: {
-      ...ss.btnGhost
+      ...ss.btnGhost,
+      opacity: saving ? 0.5 : 1
     }
   }, "Save only"), /*#__PURE__*/React.createElement("button", {
     onClick: () => savePlan(true),
-    style: ss.btnPrimary
+    disabled: saving,
+    style: {
+      ...ss.btnPrimary,
+      opacity: saving ? 0.5 : 1
+    }
   }, "Save & Activate")))), plans.length === 0 && !showUpload && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "book",
     title: "No plans yet",
@@ -5328,11 +5375,11 @@ function SettingsScreen({
       const data = JSON.parse(text);
       if (!data.plans || !data.entries || !data.logs) throw new Error("Invalid backup file");
       // Write all records
-      for (const p of data.plans || []) await dbPut("plans", p);
-      for (const e of data.entries || []) await dbPut("plan_entries", e);
-      for (const l of data.logs || []) await dbPut("reading_logs", l);
-      for (const r of data.reflections || []) await dbPut("reflections", r);
-      for (const s of data.sermons || []) await dbPut("sermons", s);
+      await dbPutMany("plans", data.plans || []);
+      await dbPutMany("plan_entries", data.entries || []);
+      await dbPutMany("reading_logs", data.logs || []);
+      await dbPutMany("reflections", data.reflections || []);
+      await dbPutMany("sermons", data.sermons || []);
       refresh();
       setImportMsg("✓ Backup restored successfully");
     } catch (err) {
