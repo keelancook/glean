@@ -752,18 +752,20 @@ function entryDate(plan, dayNumber) {
 function currentDayNumber(plan, totalDays) {
   if (!plan.start_date) return null;
   const diff = daysBetween(plan.start_date, todayStr());
-  return Math.min(Math.max(diff + 1, 1), totalDays);
+  if (diff < 0) return null; // Plan hasn't started yet — don't show on home screen
+  return Math.min(diff + 1, totalDays);
 }
 
 // Count how many times a plan has been fully completed
 // = floor of (min logged-chapters / total-chapters across all entries)
 function planCompletions(planEntries, allLogs) {
   if (!planEntries.length) return 0;
-  const loggedPassages = allLogs.map(l => l.passage);
   const perEntryMin = planEntries.map(e => {
     const total = e.passages.reduce((a, p) => a + passageChapters(p).length, 0);
     if (!total) return 0;
-    const done = e.passages.reduce((a, p) => a + passageChapters(p).filter(ch => loggedPassages.includes(ch)).length, 0);
+    // Scope logs to this specific entry to avoid cross-plan contamination
+    const eLogs = allLogs.filter(l => l.entry_id === e.id);
+    const done = e.passages.reduce((a, p) => a + passageChapters(p).filter(ch => eLogs.some(l => l.passage === ch)).length, 0);
     return Math.floor(done / total);
   });
   return Math.min(...perEntryMin);
@@ -2456,18 +2458,25 @@ function PlansScreen({
   const [newPlanStartDate, setNewPlanStartDate] = useState(new Date().getFullYear() + "-01-01");
   const [selected, setSelected] = useState(null);
   const fileInputRef = useRef(null);
-  async function savePlan() {
+  async function savePlan(activate) {
     if (!title.trim() || !markdown.trim()) return;
     const {
       plan,
       entries: ne
     } = parseMarkdownPlan(title.trim(), markdown.trim());
-    // Apply start date and activate immediately if one was set
-    const finalPlan = newPlanStartDate ? {
-      ...plan,
-      start_date: newPlanStartDate,
-      active: true
-    } : plan; // stays inactive, user activates manually
+    let finalPlan = plan; // inactive by default
+    if (activate && newPlanStartDate) {
+      finalPlan = {
+        ...plan,
+        start_date: newPlanStartDate,
+        active: true
+      };
+    } else if (activate) {
+      finalPlan = {
+        ...plan,
+        active: true
+      };
+    }
     await dbPut("plans", finalPlan);
     for (const e of ne) await dbPut("plan_entries", e);
     setTitle("");
@@ -2985,11 +2994,11 @@ function PlansScreen({
       color: C.muted,
       fontFamily: F.sans
     }
-  }, "Plan start date ", /*#__PURE__*/React.createElement("span", {
+  }, "Start date ", /*#__PURE__*/React.createElement("span", {
     style: {
       opacity: 0.6
     }
-  }, "(Day 1 = this date)")), /*#__PURE__*/React.createElement("input", {
+  }, "(required to activate \xB7 Day 1 = this date)")), /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: newPlanStartDate,
     onChange: e => setNewPlanStartDate(e.target.value),
@@ -3015,7 +3024,12 @@ function PlansScreen({
     onClick: () => setShowUpload(false),
     style: ss.btnGhost
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
-    onClick: savePlan,
+    onClick: () => savePlan(false),
+    style: {
+      ...ss.btnGhost
+    }
+  }, "Save only"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => savePlan(true),
     style: ss.btnPrimary
   }, "Save & Activate")))), plans.length === 0 && !showUpload && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "book",
@@ -3023,9 +3037,11 @@ function PlansScreen({
     body: "Add your first reading plan to get started."
   }), plans.map(plan => {
     const pe = entries.filter(e => e.plan_id === plan.id);
-    const allLoggedPassages = logs.map(l => l.passage);
     const total = pe.reduce((a, e) => a + e.passages.reduce((b, p) => b + passageChapters(p).length, 0), 0);
-    const done = pe.reduce((a, e) => a + e.passages.reduce((b, p) => b + passageChapters(p).filter(ch => allLoggedPassages.includes(ch)).length, 0), 0);
+    const done = pe.reduce((a, e) => {
+      const eLogs = logs.filter(l => l.entry_id === e.id);
+      return a + e.passages.reduce((b, p) => b + passageChapters(p).filter(ch => eLogs.some(l => l.passage === ch)).length, 0);
+    }, 0);
     const pct = total ? Math.round(done / total * 100) : 0;
     return /*#__PURE__*/React.createElement("div", {
       key: plan.id,
