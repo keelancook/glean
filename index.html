@@ -1442,7 +1442,8 @@ function PastReflectionsPanel({
 // ── Gleaning card with expand/collapse ───────────────────────────────────────
 const GLEANING_PREVIEW = 180;
 function GleaningCard({
-  r
+  r,
+  onEdit
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = r.body.length > GLEANING_PREVIEW;
@@ -1451,7 +1452,40 @@ function GleaningCard({
       ...ss.card,
       padding: "12px 14px"
     }
-  }, r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: r.passages.length > 0 ? 6 : 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.muted,
+      fontFamily: F.sans
+    }
+  }, fmtDate(r.date)), onEdit && /*#__PURE__*/React.createElement("button", {
+    onClick: onEdit,
+    style: {
+      background: "none",
+      border: `1px solid ${C.border}`,
+      borderRadius: 8,
+      padding: "3px 10px",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      fontFamily: F.sans,
+      fontSize: 11,
+      color: "#6b5f54"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "pen",
+    size: 11,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), "Edit")), r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexWrap: "wrap",
@@ -3129,7 +3163,12 @@ function JournalScreen({
   function calDayStr(d) {
     return `${calDate.year}-${String(calDate.month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
-  const filtered = [...reflections];
+  const filtered = [...reflections].sort((a, b) => b.date.localeCompare(a.date)).filter(r => {
+    if (filterDay && r.date !== filterDay) return false;
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return r.body.toLowerCase().includes(q) || r.passages.some(p => p.toLowerCase().includes(q));
+  });
   if (selected) return /*#__PURE__*/React.createElement("div", {
     style: ss.screen
   }, /*#__PURE__*/React.createElement("div", {
@@ -3420,42 +3459,14 @@ function JournalScreen({
     icon: "pen",
     title: filterDay ? "No gleanings this day" : "No gleanings yet",
     body: filterDay ? "Try another day or clear the filter." : "Write your first gleaning from the Home screen."
-  }), filtered.map(r => /*#__PURE__*/React.createElement("button", {
+  }), filtered.map(r => /*#__PURE__*/React.createElement(GleaningCard, {
     key: r.id,
-    className: "tappable",
-    onClick: () => {
+    r: r,
+    onEdit: () => {
       setSelected(r);
       setEditBody(r.body);
-    },
-    style: {
-      ...ss.card,
-      padding: 16,
-      textAlign: "left",
-      width: "100%",
-      cursor: "pointer",
-      display: "flex",
-      flexDirection: "column",
-      gap: 8,
-      background: C.card
     }
-  }, /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 12,
-      color: C.muted,
-      fontFamily: F.sans
-    }
-  }, fmtDate(r.date)), r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 5
-    }
-  }, r.passages.slice(0, 3).map(p => /*#__PURE__*/React.createElement("span", {
-    key: p,
-    style: ss.tag
-  }, p))), /*#__PURE__*/React.createElement(MarkdownRenderer, {
-    text: r.body.slice(0, 130) + (r.body.length > 130 ? "…" : "")
-  }))));
+  })));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -3487,6 +3498,33 @@ function SermonsScreen({
     downloadFile: sDl,
     Toast: SermonToast
   } = useShare();
+  const [filterTag, setFilterTag] = useState(null);
+  const [filterPassage, setFilterPassage] = useState(null); // "Book Chapter" string
+  const [showTagFilter, setShowTagFilter] = useState(false);
+  const [showPassageFilter, setShowPassageFilter] = useState(false);
+
+  // Collect all unique tags across sermons
+  const allTags = [...new Set(sermons.flatMap(s => Array.isArray(s.tags) ? s.tags : []))].sort();
+
+  // Collect all unique chapter references across sermon passages
+  const allPassageChapters = [...new Set(sermons.filter(s => s.passage).flatMap(s => expandPassageToChapters(s.passage)))].sort((a, b) => {
+    const bookA = extractBook(a),
+      bookB = extractBook(b);
+    if (bookA !== bookB) return bookA.localeCompare(bookB);
+    const numA = parseInt(a.split(" ").pop()) || 0;
+    const numB = parseInt(b.split(" ").pop()) || 0;
+    return numA - numB;
+  });
+
+  // Apply filters to sermon list
+  const filteredSermons = [...sermons].sort((a, b) => b.date.localeCompare(a.date)).filter(s => {
+    if (filterTag && !(Array.isArray(s.tags) ? s.tags : []).includes(filterTag)) return false;
+    if (filterPassage && s.passage) {
+      const chs = expandPassageToChapters(s.passage);
+      if (!chs.includes(filterPassage)) return false;
+    } else if (filterPassage && !s.passage) return false;
+    return true;
+  });
   async function save() {
     if (!form.title.trim()) return;
     await dbPut("sermons", {
@@ -3691,8 +3729,35 @@ function SermonsScreen({
       }
     }, selected.tags.map(t => /*#__PURE__*/React.createElement("span", {
       key: t,
-      style: ss.tag
-    }, t))), selected.source_url && /*#__PURE__*/React.createElement("a", {
+      style: {
+        ...ss.tag,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, t, /*#__PURE__*/React.createElement("button", {
+      onClick: async () => {
+        const newTags = selected.tags.filter(x => x !== t);
+        await dbPut("sermons", {
+          ...selected,
+          tags: newTags
+        });
+        setSelected(s => ({
+          ...s,
+          tags: newTags
+        }));
+        refresh();
+      },
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+        lineHeight: 1,
+        color: C.muted,
+        fontSize: 12
+      }
+    }, "\xD7")))), selected.source_url && /*#__PURE__*/React.createElement("a", {
       href: selected.source_url,
       target: "_blank",
       rel: "noreferrer",
@@ -3843,11 +3908,166 @@ function SermonsScreen({
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     onClick: save,
     style: ss.btnPrimary
-  }, "Save Sermon"))), sermons.length === 0 && !showAdd && /*#__PURE__*/React.createElement(EmptyState, {
+  }, "Save Sermon"))), !showAdd && (allTags.length > 0 || allPassageChapters.length > 0) && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      flexWrap: "wrap"
+    }
+  }, allTags.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setShowTagFilter(o => !o);
+      setShowPassageFilter(false);
+    },
+    style: {
+      ...ss.btnGhost,
+      display: "flex",
+      alignItems: "center",
+      gap: 5,
+      fontSize: 12,
+      padding: "6px 12px",
+      background: filterTag ? C.brown : "none",
+      color: filterTag ? "white" : "#6b5f54",
+      border: `1px solid ${filterTag ? C.brown : C.border}`
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "bookmark",
+    size: 12,
+    color: filterTag ? "white" : C.brown,
+    strokeWidth: 1.75
+  }), filterTag || "Tag", filterTag && /*#__PURE__*/React.createElement("span", {
+    onClick: e => {
+      e.stopPropagation();
+      setFilterTag(null);
+    },
+    style: {
+      marginLeft: 2,
+      opacity: 0.7
+    }
+  }, "\xD7")), showTagFilter && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: "110%",
+      left: 0,
+      zIndex: 200,
+      background: "white",
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+      minWidth: 160,
+      maxHeight: 240,
+      overflowY: "auto"
+    }
+  }, allTags.map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => {
+      setFilterTag(t === filterTag ? null : t);
+      setShowTagFilter(false);
+    },
+    style: {
+      display: "block",
+      width: "100%",
+      textAlign: "left",
+      padding: "9px 14px",
+      background: t === filterTag ? "#f5f0e8" : "none",
+      border: "none",
+      cursor: "pointer",
+      fontFamily: F.sans,
+      fontSize: 13,
+      color: C.ink,
+      borderBottom: `1px solid ${C.border}`
+    }
+  }, t)))), allPassageChapters.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setShowPassageFilter(o => !o);
+      setShowTagFilter(false);
+    },
+    style: {
+      ...ss.btnGhost,
+      display: "flex",
+      alignItems: "center",
+      gap: 5,
+      fontSize: 12,
+      padding: "6px 12px",
+      background: filterPassage ? C.brown : "none",
+      color: filterPassage ? "white" : "#6b5f54",
+      border: `1px solid ${filterPassage ? C.brown : C.border}`
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "book",
+    size: 12,
+    color: filterPassage ? "white" : C.brown,
+    strokeWidth: 1.75
+  }), filterPassage || "Passage", filterPassage && /*#__PURE__*/React.createElement("span", {
+    onClick: e => {
+      e.stopPropagation();
+      setFilterPassage(null);
+    },
+    style: {
+      marginLeft: 2,
+      opacity: 0.7
+    }
+  }, "\xD7")), showPassageFilter && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      top: "110%",
+      left: 0,
+      zIndex: 200,
+      background: "white",
+      border: `1px solid ${C.border}`,
+      borderRadius: 10,
+      boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+      minWidth: 180,
+      maxHeight: 280,
+      overflowY: "auto"
+    }
+  }, allPassageChapters.map(ch => /*#__PURE__*/React.createElement("button", {
+    key: ch,
+    onClick: () => {
+      setFilterPassage(ch === filterPassage ? null : ch);
+      setShowPassageFilter(false);
+    },
+    style: {
+      display: "block",
+      width: "100%",
+      textAlign: "left",
+      padding: "9px 14px",
+      background: ch === filterPassage ? "#f5f0e8" : "none",
+      border: "none",
+      cursor: "pointer",
+      fontFamily: F.serif,
+      fontSize: 13,
+      color: C.ink,
+      borderBottom: `1px solid ${C.border}`
+    }
+  }, ch)))), (filterTag || filterPassage) && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setFilterTag(null);
+      setFilterPassage(null);
+    },
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "6px 10px",
+      color: C.muted
+    }
+  }, "Clear all")), sermons.length === 0 && !showAdd && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "mic",
     title: "No sermons logged",
     body: "Log your first sermon to begin building your notes archive."
-  }), [...sermons].sort((a, b) => b.date.localeCompare(a.date)).map(s => /*#__PURE__*/React.createElement("button", {
+  }), filteredSermons.length === 0 && sermons.length > 0 && !showAdd && /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "mic",
+    title: "No sermons match",
+    body: "Try clearing the filter."
+  }), filteredSermons.map(s => /*#__PURE__*/React.createElement("button", {
     key: s.id,
     className: "tappable",
     onClick: () => setSelected(s),
@@ -4381,7 +4601,86 @@ function MdSermonImportButton({
   const ref = useRef(null);
   const [status, setStatus] = useState(null);
   function parseSermonMd(text) {
-    // Parse YAML frontmatter between --- delimiters
+    // Field alias map — maps any recognised key to a canonical field name
+    const FIELD_MAP = {
+      // title
+      title: "title",
+      name: "title",
+      sermon: "title",
+      // preacher
+      preacher: "preacher",
+      speaker: "preacher",
+      pastor: "preacher",
+      minister: "preacher",
+      teacher: "preacher",
+      author: "preacher",
+      // passage
+      passage: "passage",
+      text: "passage",
+      scripture: "passage",
+      reference: "passage",
+      verse: "passage",
+      verses: "passage",
+      "scripture reference": "passage",
+      // series
+      series: "series",
+      "sermon series": "series",
+      topic: "series",
+      // venue
+      venue: "venue",
+      church: "venue",
+      location: "venue",
+      congregation: "venue",
+      parish: "venue",
+      "church name": "venue",
+      // date
+      date: "date",
+      "sermon date": "date",
+      "date preached": "date",
+      preached: "date",
+      delivered: "date",
+      // source_url
+      source_url: "source_url",
+      url: "source_url",
+      link: "source_url",
+      notes_url: "source_url",
+      "source url": "source_url",
+      // tags
+      tags: "tags",
+      tag: "tags",
+      categories: "tags",
+      category: "tags",
+      keywords: "tags"
+    };
+
+    // Normalise a raw date string to YYYY-MM-DD
+    function normaliseDate(raw) {
+      const s = raw.trim();
+      if (!s) return "";
+
+      // Already YYYY-MM-DD
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+      // YYYY/MM/DD
+      if (/^\d{4}\/\d{2}\/\d{2}$/.test(s)) return s.replace(/\//g, "-");
+
+      // MM/DD/YYYY or M/D/YYYY
+      const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (mdy) return `${mdy[3]}-${mdy[1].padStart(2, "0")}-${mdy[2].padStart(2, "0")}`;
+
+      // DD-MM-YYYY or MM-DD-YYYY — ambiguous; assume MM-DD-YYYY for US locale
+      const dmy = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+      if (dmy) return `${dmy[3]}-${dmy[1].padStart(2, "0")}-${dmy[2].padStart(2, "0")}`;
+
+      // "April 19, 2026" / "Apr 19 2026" / "19 April 2026"
+      const parsed = new Date(s);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split("T")[0];
+      }
+
+      // Give up — return as-is and let the date input handle it
+      return s;
+    }
     const fmMatch = text.match(/^---\n([\s\S]*?)\n---/);
     const result = {
       title: "",
@@ -4396,29 +4695,26 @@ function MdSermonImportButton({
     };
     if (fmMatch) {
       const fm = fmMatch[1];
-      // Parse each key: value line — handles quoted and unquoted values
       const lines = fm.split("\n");
       for (const line of lines) {
-        const m = line.match(/^(\w+(?:_\w+)*):\s*"?([^"]*)"?\s*$/);
+        // Match "key: value" with optional quotes, key may contain spaces or underscores
+        const m = line.match(/^([\w][\w\s]*):\s*"?([^"]*)"?\s*$/);
         if (!m) continue;
-        const [, key, val] = m;
-        const v = val.trim();
-        if (key === "title") result.title = v;
-        if (key === "preacher") result.preacher = v;
-        if (key === "passage") result.passage = v;
-        if (key === "series") result.series = v;
-        if (key === "venue") result.venue = v;
-        if (key === "date") result.date = v;
-        if (key === "source_url") result.source_url = v;
-        if (key === "tags") {
-          // Handle array format: [tag1, tag2] or plain string
+        const rawKey = m[1].trim().toLowerCase();
+        const v = m[2].trim();
+        const field = FIELD_MAP[rawKey];
+        if (!field) continue;
+        if (field === "date") {
+          result.date = normaliseDate(v);
+        } else if (field === "tags") {
           result.tags = v.replace(/^\[|\]$/g, "").replace(/['"]/g, "").trim();
+        } else {
+          result[field] = v;
         }
       }
-      // Body = everything after the closing ---
       result.notes = text.slice(fmMatch[0].length).replace(/^\n+/, "").trim();
     } else {
-      // No frontmatter — treat entire file as notes, try to extract title from # heading
+      // No frontmatter — whole file is notes; pull title from first # heading
       const titleMatch = text.match(/^#\s+(.+)/m);
       if (titleMatch) result.title = titleMatch[1].trim();
       result.notes = text.trim();
