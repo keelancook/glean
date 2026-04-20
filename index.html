@@ -4991,10 +4991,11 @@ function PdfUploadButton({
 function BookAccordion({
   title,
   books,
-  bookChapterLogs
+  bookCompletions,
+  bookChaptersRead
 }) {
   const [open, setOpen] = useState(false);
-  const anyRead = books.some(b => (bookChapterLogs[b]?.size || 0) > 0);
+  const anyRead = books.some(b => bookChaptersRead(b) > 0);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       border: `1px solid ${C.border}`,
@@ -5032,7 +5033,7 @@ function BookAccordion({
       color: C.muted,
       fontFamily: F.sans
     }
-  }, books.filter(b => Math.floor((bookChapterLogs[b]?.size || 0) / (BOOK_CHAPTERS[b] || 1)) >= 1).length, " completed"), /*#__PURE__*/React.createElement("svg", {
+  }, books.filter(b => bookCompletions(b) >= 1).length, " completed"), /*#__PURE__*/React.createElement("svg", {
     width: "14",
     height: "14",
     viewBox: "0 0 24 24",
@@ -5053,10 +5054,11 @@ function BookAccordion({
     }
   }, books.map((book, idx) => {
     const total = BOOK_CHAPTERS[book] || 1;
-    const logged = bookChapterLogs[book]?.size || 0;
-    const completions = Math.floor(logged / total);
-    const partialPct = Math.round(logged % total / total * 100);
-    const hasActivity = logged > 0;
+    const comps = bookCompletions(book);
+    const chapsDone = bookChaptersRead(book);
+    // Partial progress = chapters read beyond the last complete pass
+    const partialPct = Math.round((chapsDone - comps * total) / total * 100);
+    const hasActivity = chapsDone > 0;
     return /*#__PURE__*/React.createElement("div", {
       key: book,
       style: {
@@ -5087,8 +5089,8 @@ function BookAccordion({
       style: {
         height: "100%",
         borderRadius: 4,
-        background: completions >= 1 ? C.brown : "#a0845c",
-        width: completions >= 1 ? "100%" : `${partialPct}%`,
+        background: comps >= 1 ? C.brown : "#a0845c",
+        width: comps >= 1 ? "100%" : `${partialPct}%`,
         transition: "width 0.3s ease"
       }
     })), /*#__PURE__*/React.createElement("div", {
@@ -5097,7 +5099,7 @@ function BookAccordion({
         display: "flex",
         justifyContent: "flex-end"
       }
-    }, completions >= 1 ? /*#__PURE__*/React.createElement("span", {
+    }, comps >= 1 ? /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: F.serif,
         fontSize: 13,
@@ -5107,13 +5109,13 @@ function BookAccordion({
         borderRadius: 20,
         padding: "1px 8px"
       }
-    }, completions, "\xD7") : hasActivity ? /*#__PURE__*/React.createElement("span", {
+    }, comps, "\xD7") : hasActivity ? /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: F.sans,
         fontSize: 11,
         color: C.muted
       }
-    }, partialPct, "%") : /*#__PURE__*/React.createElement("span", {
+    }, Math.round(chapsDone / total * 100), "%") : /*#__PURE__*/React.createElement("span", {
       style: {
         fontFamily: F.sans,
         fontSize: 11,
@@ -5133,16 +5135,34 @@ function StatsScreen({
   streak,
   booksRead
 }) {
-  // Count unique logged chapters per book
-  const bookChapterLogs = {};
+  // Count how many times each chapter has been logged (allows > 1 for re-reads)
+  const chapterCounts = {};
   logs.forEach(l => {
-    const b = extractBook(l.passage);
-    if (!bookChapterLogs[b]) bookChapterLogs[b] = new Set();
-    bookChapterLogs[b].add(l.passage);
+    chapterCounts[l.passage] = (chapterCounts[l.passage] || 0) + 1;
   });
 
-  // Completions per book = floor(logged chapters / total chapters)
-  const bookCompletions = b => Math.floor((bookChapterLogs[b]?.size || 0) / (BOOK_CHAPTERS[b] || 1));
+  // Completions per book = minimum times any chapter in the book has been logged
+  // This correctly handles partial reads (min = 0 if any chapter unread)
+  // and multiple complete passes (min = N if every chapter read N times)
+  const bookCompletions = b => {
+    const total = BOOK_CHAPTERS[b] || 1;
+    let min = Infinity;
+    for (let ch = 1; ch <= total; ch++) {
+      const key = `${b} ${ch}`;
+      min = Math.min(min, chapterCounts[key] || 0);
+    }
+    return min === Infinity ? 0 : min;
+  };
+
+  // For the progress bar: how many distinct chapters logged at least once
+  const bookChaptersRead = b => {
+    const total = BOOK_CHAPTERS[b] || 1;
+    let count = 0;
+    for (let ch = 1; ch <= total; ch++) {
+      if (chapterCounts[`${b} ${ch}`]) count++;
+    }
+    return count;
+  };
   const OT = BIBLE_BOOKS.slice(0, 39);
   const NT = BIBLE_BOOKS.slice(39);
 
@@ -5301,11 +5321,13 @@ function StatsScreen({
   }, "More"))), /*#__PURE__*/React.createElement(BookAccordion, {
     title: "Old Testament",
     books: OT,
-    bookChapterLogs: bookChapterLogs
+    bookCompletions: bookCompletions,
+    bookChaptersRead: bookChaptersRead
   }), /*#__PURE__*/React.createElement(BookAccordion, {
     title: "New Testament",
     books: NT,
-    bookChapterLogs: bookChapterLogs
+    bookCompletions: bookCompletions,
+    bookChaptersRead: bookChaptersRead
   }));
 }
 
