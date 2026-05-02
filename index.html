@@ -738,7 +738,10 @@ function parseMarkdownPlan(title, markdown) {
 }
 
 // ── Date utils ─────────────────────────────────────────────────────────────────
-const todayStr = () => new Date().toISOString().split("T")[0];
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
 
 // Days between two YYYY-MM-DD strings (b - a), positive if b is later
 function daysBetween(a, b) {
@@ -829,7 +832,11 @@ const ss = {
     padding: "22px 18px 96px",
     display: "flex",
     flexDirection: "column",
-    gap: 16
+    gap: 16,
+    maxWidth: 760,
+    width: "100%",
+    margin: "0 auto",
+    boxSizing: "border-box"
   },
   title: {
     fontFamily: F.serif,
@@ -939,13 +946,182 @@ function useSwipeNav(tabs, currentTab, setTab) {
     if (Math.abs(dx) < 50) return;
     const idx = tabs.indexOf(currentTab);
     if (idx === -1) return;
-    if (dx < 0 && idx < tabs.length - 1) setTab(tabs[idx + 1]); // left swipe → next
-    if (dx > 0 && idx > 0) setTab(tabs[idx - 1]); // right swipe → prev
+    if (dx < 0) setTab(tabs[(idx + 1) % tabs.length]); // left swipe → next (wraps)
+    if (dx > 0) setTab(tabs[(idx - 1 + tabs.length) % tabs.length]); // right swipe → prev (wraps)
   }
   return {
     onTouchStart,
     onTouchEnd
   };
+}
+
+// ── Collapsible side nav (desktop only) ──────────────────────────────────────
+function SideNav({
+  nav,
+  tab,
+  setTab,
+  streak
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const w = collapsed ? 56 : 200;
+  return /*#__PURE__*/React.createElement("nav", {
+    className: "side-nav",
+    style: {
+      display: "none",
+      flexDirection: "column",
+      width: w,
+      minWidth: w,
+      background: C.ink,
+      padding: "12px 6px",
+      gap: 2,
+      flexShrink: 0,
+      transition: "width 0.2s ease, min-width 0.2s ease",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: collapsed ? "center" : "space-between",
+      padding: "6px 8px 16px",
+      gap: 8
+    }
+  }, !collapsed && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement(WheatMark, {
+    size: 20,
+    color: C.gold
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: F.serif,
+      fontSize: 17,
+      fontWeight: 600,
+      color: C.warm,
+      whiteSpace: "nowrap"
+    }
+  }, "Glean")), collapsed && /*#__PURE__*/React.createElement(WheatMark, {
+    size: 20,
+    color: C.gold
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setCollapsed(c => !c),
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: 4,
+      flexShrink: 0,
+      opacity: 0.5,
+      color: C.warm
+    }
+  }, /*#__PURE__*/React.createElement("svg", {
+    width: "14",
+    height: "14",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, collapsed ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("polyline", {
+    points: "9 18 15 12 9 6"
+  })) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("polyline", {
+    points: "15 18 9 12 15 6"
+  }))))), nav.map(({
+    id,
+    icon,
+    label
+  }) => /*#__PURE__*/React.createElement("button", {
+    key: id,
+    onClick: () => setTab(id),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px",
+      background: tab === id ? "rgba(255,255,255,0.1)" : "none",
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 10,
+      width: "100%",
+      transition: "background 0.15s",
+      justifyContent: collapsed ? "center" : "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: icon,
+    size: 17,
+    color: tab === id ? C.gold : "#8a8178",
+    strokeWidth: tab === id ? 1.75 : 1.5
+  }), !collapsed && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      color: tab === id ? C.gold : "#8a8178",
+      fontFamily: F.sans,
+      whiteSpace: "nowrap"
+    }
+  }, label))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginTop: "auto",
+      display: "flex",
+      flexDirection: "column",
+      gap: 2
+    }
+  }, streak > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 10px",
+      justifyContent: collapsed ? "center" : "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "flame",
+    size: 14,
+    color: C.gold,
+    strokeWidth: 1.5
+  }), !collapsed && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: F.serif,
+      color: C.gold,
+      fontSize: 13,
+      fontWeight: 600
+    }
+  }, streak, " day streak"), collapsed && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: F.serif,
+      color: C.gold,
+      fontSize: 12,
+      fontWeight: 600
+    }
+  }, streak)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setTab("settings"),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px",
+      background: tab === "settings" ? "rgba(255,255,255,0.1)" : "none",
+      border: "none",
+      cursor: "pointer",
+      borderRadius: 10,
+      width: "100%",
+      justifyContent: collapsed ? "center" : "flex-start"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "settings",
+    size: 17,
+    color: tab === "settings" ? C.gold : "#8a8178",
+    strokeWidth: 1.5
+  }), !collapsed && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      color: tab === "settings" ? C.gold : "#8a8178",
+      fontFamily: F.sans
+    }
+  }, "Settings"))));
 }
 function ScriptureDesk() {
   const [tab, setTab] = useState("home");
@@ -957,7 +1133,7 @@ function ScriptureDesk() {
   const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     const style = document.createElement("style");
-    style.textContent = `@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Lato:wght@300;400;700&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{background:#f7f4ef;}.passage-btn:hover{background:#f5f0e8!important;}.tappable:hover{box-shadow:0 3px 14px rgba(0,0,0,0.08)!important;transform:translateY(-1px);transition:all 0.15s ease;}.tappable:active{transform:scale(0.99);}textarea:focus,input:focus{outline:none;border-color:#7c5c3a!important;}::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#d6cfc4;border-radius:4px;}@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeUp 0.2s ease both;}`;
+    style.textContent = `@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Lato:wght@300;400;700&display=swap');*{box-sizing:border-box;margin:0;padding:0;}body{background:#f7f4ef;}.passage-btn:hover{background:#f5f0e8!important;}.tappable:hover{box-shadow:0 3px 14px rgba(0,0,0,0.08)!important;transform:translateY(-1px);transition:all 0.15s ease;}.tappable:active{transform:scale(0.99);}textarea:focus,input:focus{outline:none;border-color:#7c5c3a!important;}::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-thumb{background:#d6cfc4;border-radius:4px;}@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeUp 0.2s ease both;}@media(min-width:700px){.side-nav{display:flex!important;}.bottom-nav{display:none!important;}.mobile-header{display:none!important;}}@media(max-width:699px){.side-nav{display:none!important;}.bottom-nav{display:flex!important;}.mobile-header{display:flex!important;}}`;
     document.head.appendChild(style);
     return () => document.head.removeChild(style);
   }, []);
@@ -1029,12 +1205,11 @@ function ScriptureDesk() {
       display: "flex",
       flexDirection: "column",
       height: "100vh",
-      maxWidth: 480,
-      margin: "0 auto",
       background: C.warm,
       fontFamily: F.sans
     }
   }, /*#__PURE__*/React.createElement("header", {
+    className: "mobile-header",
     style: {
       display: "flex",
       alignItems: "center",
@@ -1103,7 +1278,18 @@ function ScriptureDesk() {
     size: 18,
     color: tab === "settings" ? C.gold : C.warm,
     strokeWidth: 1.5
-  })))), /*#__PURE__*/React.createElement("main", {
+  })))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flex: 1,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement(SideNav, {
+    nav: nav,
+    tab: tab,
+    setTab: setTab,
+    streak: streak
+  }), /*#__PURE__*/React.createElement("main", {
     style: {
       flex: 1,
       overflowY: "auto"
@@ -1137,7 +1323,8 @@ function ScriptureDesk() {
     reflections: reflections,
     sermons: sermons,
     streak: streak,
-    booksRead: booksRead
+    booksRead: booksRead,
+    setTab: setTab
   }), tab === "settings" && /*#__PURE__*/React.createElement(SettingsScreen, {
     plans: plans,
     entries: entries,
@@ -1145,14 +1332,13 @@ function ScriptureDesk() {
     reflections: reflections,
     sermons: sermons,
     refresh: load
-  }))), /*#__PURE__*/React.createElement("nav", {
+  })))), /*#__PURE__*/React.createElement("nav", {
+    className: "bottom-nav",
     style: {
       position: "fixed",
       bottom: 0,
-      left: "50%",
-      transform: "translateX(-50%)",
+      left: 0,
       width: "100%",
-      maxWidth: 480,
       display: "flex",
       background: C.ink,
       borderTop: `1px solid ${C.dark}`,
@@ -1331,33 +1517,66 @@ function PastReflectionsPanel({
   if (!passageMatches.length && !anniversaryMatches.length) return null;
   const ReflCard = ({
     r
-  }) => /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#fdfcfa",
-      borderRadius: 10,
-      padding: "10px 12px",
-      border: `1px solid ${C.border}`
-    }
-  }, /*#__PURE__*/React.createElement("p", {
-    style: {
-      fontSize: 11,
-      color: C.muted,
-      fontFamily: F.sans,
-      marginBottom: 4
-    }
-  }, fmtDate(r.date)), r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexWrap: "wrap",
-      gap: 4,
-      marginBottom: 6
-    }
-  }, r.passages.slice(0, 3).map(p => /*#__PURE__*/React.createElement("span", {
-    key: p,
-    style: ss.tag
-  }, p))), /*#__PURE__*/React.createElement(MarkdownRenderer, {
-    text: r.body.slice(0, 160) + (r.body.length > 160 ? "…" : "")
-  }));
+  }) => {
+    const [exp, setExp] = useState(false);
+    const long = r.body.length > 160;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#fdfcfa",
+        borderRadius: 10,
+        padding: "10px 12px",
+        border: `1px solid ${C.border}`
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans,
+        marginBottom: 4
+      }
+    }, fmtDate(r.date)), r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 4,
+        marginBottom: 6
+      }
+    }, r.passages.slice(0, 3).map(p => /*#__PURE__*/React.createElement("span", {
+      key: p,
+      style: ss.tag
+    }, p))), /*#__PURE__*/React.createElement(MarkdownRenderer, {
+      text: exp || !long ? r.body : r.body.slice(0, 160) + "…"
+    }), long && /*#__PURE__*/React.createElement("button", {
+      onClick: () => setExp(e => !e),
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: "4px 0 0",
+        fontFamily: F.sans,
+        fontSize: 11,
+        color: C.brown,
+        display: "flex",
+        alignItems: "center",
+        gap: 3
+      }
+    }, /*#__PURE__*/React.createElement("svg", {
+      width: "10",
+      height: "10",
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "2",
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      style: {
+        transform: exp ? "rotate(180deg)" : "rotate(0deg)",
+        transition: "transform 0.2s"
+      }
+    }, /*#__PURE__*/React.createElement("polyline", {
+      points: "6 9 12 15 18 9"
+    })), exp ? "Show less" : "Read more"));
+  };
   const Disclosure = ({
     icon,
     label,
@@ -2092,7 +2311,8 @@ function HomeScreen({
     }
   }, "Add"))), todayReflections.map(r => /*#__PURE__*/React.createElement(GleaningCard, {
     key: r.id,
-    r: r
+    r: r,
+    refresh: refresh
   })), showReflection && /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
@@ -5133,7 +5353,8 @@ function StatsScreen({
   reflections,
   sermons,
   streak,
-  booksRead
+  booksRead,
+  setTab
 }) {
   // Count how many times each chapter has been logged (allows > 1 for re-reads)
   const chapterCounts = {};
@@ -5181,7 +5402,9 @@ function StatsScreen({
   const last30 = Array.from({
     length: 30
   }, (_, i) => {
-    const s = new Date(Date.now() - (29 - i) * 86400000).toISOString().split("T")[0];
+    const d2 = new Date();
+    d2.setDate(d2.getDate() - (29 - i));
+    const s = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, "0")}-${String(d2.getDate()).padStart(2, "0")}`;
     return {
       date: s,
       count: logs.filter(l => l.completed_at.startsWith(s)).length
@@ -5190,31 +5413,38 @@ function StatsScreen({
   const topStats = [{
     label: "Day Streak",
     value: streak,
-    icon: "flame"
+    icon: "flame",
+    nav: null
   }, {
     label: "Chapters Read",
     value: logs.length,
-    icon: "book"
+    icon: "book",
+    nav: "plans"
   }, {
     label: "Gleanings",
     value: reflections.length,
-    icon: "pen"
+    icon: "pen",
+    nav: "journal"
   }, {
     label: "Sermons Logged",
     value: sermons.length,
-    icon: "mic"
+    icon: "mic",
+    nav: "sermons"
   }, {
     label: otLabel,
     value: otValue,
-    icon: "sun"
+    icon: "sun",
+    nav: null
   }, {
     label: ntLabel,
     value: ntValue,
-    icon: "bookmark"
+    icon: "bookmark",
+    nav: null
   }, {
     label: "Full Bible",
     value: bibleCompletions,
-    icon: "check"
+    icon: "check",
+    nav: null
   }];
   return /*#__PURE__*/React.createElement("div", {
     style: ss.screen
@@ -5229,39 +5459,63 @@ function StatsScreen({
   }, topStats.map(({
     label,
     value,
-    icon
-  }) => /*#__PURE__*/React.createElement("div", {
-    key: label,
-    style: {
-      ...ss.card,
-      padding: "14px 12px",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      gap: 5
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: icon,
-    size: 15,
-    color: C.muted,
-    strokeWidth: 1.5
-  }), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontFamily: F.serif,
-      fontSize: 24,
-      fontWeight: 600,
-      color: C.ink
-    }
-  }, value), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 9,
+    icon,
+    nav
+  }) => {
+    const el = /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...ss.card,
+        padding: "14px 12px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: 5,
+        cursor: nav ? "pointer" : "default",
+        transition: nav ? "box-shadow 0.15s" : "none"
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: icon,
+      size: 15,
       color: C.muted,
-      textAlign: "center",
-      textTransform: "uppercase",
-      letterSpacing: "0.07em",
-      lineHeight: 1.3
-    }
-  }, label)))), /*#__PURE__*/React.createElement("div", {
+      strokeWidth: 1.5
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 24,
+        fontWeight: 600,
+        color: C.ink
+      }
+    }, value), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: C.muted,
+        textAlign: "center",
+        textTransform: "uppercase",
+        letterSpacing: "0.07em",
+        lineHeight: 1.3
+      }
+    }, label), nav && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 9,
+        color: C.brown,
+        textTransform: "uppercase",
+        letterSpacing: "0.05em"
+      }
+    }, "\u2192"));
+    return nav ? /*#__PURE__*/React.createElement("button", {
+      key: label,
+      onClick: () => setTab(nav),
+      style: {
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        textAlign: "left"
+      }
+    }, el) : /*#__PURE__*/React.createElement("div", {
+      key: label
+    }, el);
+  })), /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
       padding: 16
