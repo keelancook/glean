@@ -1674,10 +1674,66 @@ function PastReflectionsPanel({
 const GLEANING_PREVIEW = 180;
 function GleaningCard({
   r,
-  onEdit
+  onEdit,
+  refresh
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editBody, setEditBody] = useState(r.body);
   const isLong = r.body.length > GLEANING_PREVIEW;
+
+  // If onEdit is provided, tapping Edit delegates to parent (journal screen)
+  // If refresh is provided (home screen), editing happens inline
+  const handleEdit = onEdit || (() => setEditing(true));
+  const showEditBtn = !!(onEdit || refresh);
+  async function saveEdit() {
+    await dbPut("reflections", {
+      ...r,
+      body: editBody,
+      updated_at: new Date().toISOString()
+    });
+    setEditing(false);
+    if (refresh) refresh();
+  }
+  if (editing) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...ss.card,
+      padding: "12px 14px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 10
+    }
+  }, r.passages.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4
+    }
+  }, r.passages.map(p => /*#__PURE__*/React.createElement("span", {
+    key: p,
+    style: ss.tag
+  }, p))), /*#__PURE__*/React.createElement(MarkdownEditor, {
+    value: editBody,
+    onChange: setEditBody,
+    rows: 5,
+    minHeight: 100,
+    placeholder: "Write your gleaning\u2026"
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setEditing(false);
+      setEditBody(r.body);
+    },
+    style: ss.btnGhost
+  }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    onClick: saveEdit,
+    style: ss.btnPrimary
+  }, "Save")));
   return /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
@@ -1696,8 +1752,8 @@ function GleaningCard({
       color: C.muted,
       fontFamily: F.sans
     }
-  }, fmtDate(r.date)), onEdit && /*#__PURE__*/React.createElement("button", {
-    onClick: onEdit,
+  }, fmtDate(r.date)), showEditBtn && /*#__PURE__*/React.createElement("button", {
+    onClick: handleEdit,
     style: {
       background: "none",
       border: `1px solid ${C.border}`,
