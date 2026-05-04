@@ -1872,7 +1872,7 @@ function HomeScreen({
   });
 
   // All reflections for today (multiple allowed)
-  const todayReflections = reflections.filter(r => r.date === today).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  const todayReflections = reflections.filter(r => r.date === today).sort((a, b) => b.created_at.localeCompare(a.created_at));
   function openNewReflection() {
     setReflectionText("");
     // Pre-select all of today's assigned passages (completed first, rest included)
@@ -2365,11 +2365,7 @@ function HomeScreen({
       color: C.brown,
       fontFamily: F.sans
     }
-  }, "Add"))), todayReflections.map(r => /*#__PURE__*/React.createElement(GleaningCard, {
-    key: r.id,
-    r: r,
-    refresh: refresh
-  })), showReflection && /*#__PURE__*/React.createElement("div", {
+  }, "Add"))), showReflection && /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
       padding: 14,
@@ -2474,7 +2470,11 @@ function HomeScreen({
   }, "Cancel"), /*#__PURE__*/React.createElement("button", {
     onClick: saveReflection,
     style: ss.btnPrimary
-  }, "Save")))));
+  }, "Save"))), todayReflections.map(r => /*#__PURE__*/React.createElement(GleaningCard, {
+    key: r.id,
+    r: r,
+    refresh: refresh
+  }))));
 }
 
 // ── Plan activation with optional start date ─────────────────────────────────
