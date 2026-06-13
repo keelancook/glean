@@ -776,6 +776,38 @@ async function syncFromCloud(refreshCallback) {
   }
 }
 
+// ── Push ALL local data to Supabase (initial migration / full sync up) ────────
+async function pushAllToCloud() {
+  if (!_authUser) return;
+  notifySync("syncing");
+  try {
+    const supa = await getSupabase();
+    for (const [store, table] of Object.entries(SD_TABLES)) {
+      const records = await dbGetAll(store);
+      if (!records.length) continue;
+      // Batch in chunks of 200 to avoid request size limits
+      const CHUNK = 200;
+      for (let i = 0; i < records.length; i += CHUNK) {
+        const chunk = records.slice(i, i + CHUNK);
+        const rows = chunk.map(r => ({
+          ...r,
+          user_id: _authUser.id
+        }));
+        const {
+          error
+        } = await supa.from(table).upsert(rows, {
+          onConflict: "id"
+        });
+        if (error) console.warn("pushAllToCloud error", table, error.message);
+      }
+    }
+    notifySync("idle");
+  } catch (e) {
+    console.error("pushAllToCloud error", e);
+    notifySync("error");
+  }
+}
+
 // ── Wrapped dbPut that also pushes to cloud ───────────────────────────────────
 async function syncPut(store, record) {
   await dbPut(store, record);
@@ -1690,7 +1722,10 @@ function ScriptureDesk() {
   useEffect(() => {
     if (!authChecked) return;
     load().then(() => {
-      if (_authUser) syncFromCloud(load);
+      if (_authUser) {
+        // Push local data up first, then pull from cloud (handles initial migration)
+        pushAllToCloud().then(() => syncFromCloud(load));
+      }
     });
   }, [authChecked]);
 
@@ -7876,7 +7911,10 @@ function SettingsScreen({
       gap: 8
     }
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => syncFromCloud(refresh),
+    onClick: async () => {
+      await pushAllToCloud();
+      await syncFromCloud(refresh);
+    },
     style: {
       ...ss.btnGhost,
       display: "flex",
