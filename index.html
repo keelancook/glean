@@ -1210,8 +1210,10 @@ function expandPassageToChapters(raw) {
 function passageLabel(p) {
   return typeof p === "string" ? p : p.label;
 }
+// Always re-expand from the label so stale stored chapter arrays don't cause bugs
 function passageChapters(p) {
-  return typeof p === "string" ? [p] : p.chapters;
+  const label = typeof p === "string" ? p : p.label;
+  return expandPassageToChapters(label);
 }
 
 // ── Plan parser ────────────────────────────────────────────────────────────────
