@@ -777,6 +777,7 @@ async function syncFromCloud(refreshCallback) {
 }
 
 // ── Push ALL local data to Supabase (initial migration / full sync up) ────────
+// Only pushes records that are newer locally than on the server (or don't exist yet)
 async function pushAllToCloud() {
   if (!_authUser) return;
   notifySync("syncing");
@@ -785,20 +786,54 @@ async function pushAllToCloud() {
     for (const [store, table] of Object.entries(SD_TABLES)) {
       const records = await dbGetAll(store);
       if (!records.length) continue;
-      // Batch in chunks of 200 to avoid request size limits
-      const CHUNK = 200;
-      for (let i = 0; i < records.length; i += CHUNK) {
-        const chunk = records.slice(i, i + CHUNK);
-        const rows = chunk.map(r => ({
-          ...r,
-          user_id: _authUser.id
-        }));
+      if (store === "reading_logs" || store === "prayer_logs") {
+        // Union merge — only push records that don't exist remotely yet
         const {
-          error
-        } = await supa.from(table).upsert(rows, {
-          onConflict: "id"
+          data: remote
+        } = await supa.from(table).select("id").eq("user_id", _authUser.id);
+        const remoteIds = new Set((remote || []).map(r => r.id));
+        const toInsert = records.filter(r => !remoteIds.has(r.id));
+        if (!toInsert.length) continue;
+        const CHUNK = 200;
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+          const rows = toInsert.slice(i, i + CHUNK).map(r => ({
+            ...r,
+            user_id: _authUser.id
+          }));
+          const {
+            error
+          } = await supa.from(table).upsert(rows, {
+            onConflict: "id"
+          });
+          if (error) console.warn("pushAllToCloud insert error", table, error.message);
+        }
+      } else {
+        // Last-write-wins — only push local records that are newer than remote
+        const {
+          data: remote
+        } = await supa.from(table).select("id, updated_at, created_at").eq("user_id", _authUser.id);
+        const remoteMap = Object.fromEntries((remote || []).map(r => [r.id, r]));
+        const toPush = records.filter(loc => {
+          const rem = remoteMap[loc.id];
+          if (!rem) return true; // doesn't exist remotely yet — push it
+          const localTs = loc.updated_at || loc.created_at || "";
+          const remoteTs = rem.updated_at || rem.created_at || "";
+          return localTs > remoteTs; // only push if local is genuinely newer
         });
-        if (error) console.warn("pushAllToCloud error", table, error.message);
+        if (!toPush.length) continue;
+        const CHUNK = 200;
+        for (let i = 0; i < toPush.length; i += CHUNK) {
+          const rows = toPush.slice(i, i + CHUNK).map(r => ({
+            ...r,
+            user_id: _authUser.id
+          }));
+          const {
+            error
+          } = await supa.from(table).upsert(rows, {
+            onConflict: "id"
+          });
+          if (error) console.warn("pushAllToCloud upsert error", table, error.message);
+        }
       }
     }
     notifySync("idle");
