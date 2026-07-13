@@ -2561,11 +2561,11 @@ function passageReadLinks(chapterRef) {
   const [, book, ch] = m;
   const esvB = book.replace(/ /g, "+");
   const csbB = encodeURIComponent(book.toLowerCase());
-  const nasbRef = encodeURIComponent(`${book} ${ch}`);
+  const nasbQ = encodeURIComponent(`${book} ${ch}`);
   return {
     esv: `https://www.esv.org/${esvB}+${ch}/`,
     csb: `https://read.csbible.com/?book=${csbB}&chapter=${ch}`,
-    nasb: `https://biblewebapp.com/study/#ref=${nasbRef}|ver=en_nasb`
+    nasb: `https://nasb.literalword.com/?q=${nasbQ}`
   };
 }
 
