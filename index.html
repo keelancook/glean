@@ -427,6 +427,11 @@ const Icon = ({
     }), /*#__PURE__*/React.createElement("path", {
       d: "M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"
     })),
+    bookOpen: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
+      d: "M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
+    })),
     shield: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
       d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
     })),
@@ -2537,6 +2542,219 @@ function GleaningCard({
   })), expanded ? "Show less" : "Read more"));
 }
 
+// ── Passage link URL builder ──────────────────────────────────────────────────
+const BIBLIA_ABBR = {
+  "Genesis": "Gen",
+  "Exodus": "Exod",
+  "Leviticus": "Lev",
+  "Numbers": "Num",
+  "Deuteronomy": "Deut",
+  "Joshua": "Josh",
+  "Judges": "Judg",
+  "Ruth": "Ruth",
+  "1 Samuel": "1Sam",
+  "2 Samuel": "2Sam",
+  "1 Kings": "1Kgs",
+  "2 Kings": "2Kgs",
+  "1 Chronicles": "1Chr",
+  "2 Chronicles": "2Chr",
+  "Ezra": "Ezra",
+  "Nehemiah": "Neh",
+  "Esther": "Esth",
+  "Job": "Job",
+  "Psalms": "Ps",
+  "Proverbs": "Prov",
+  "Ecclesiastes": "Eccl",
+  "Song of Solomon": "Song",
+  "Isaiah": "Isa",
+  "Jeremiah": "Jer",
+  "Lamentations": "Lam",
+  "Ezekiel": "Ezek",
+  "Daniel": "Dan",
+  "Hosea": "Hos",
+  "Joel": "Joel",
+  "Amos": "Amos",
+  "Obadiah": "Obad",
+  "Jonah": "Jonah",
+  "Micah": "Mic",
+  "Nahum": "Nah",
+  "Habakkuk": "Hab",
+  "Zephaniah": "Zeph",
+  "Haggai": "Hag",
+  "Zechariah": "Zech",
+  "Malachi": "Mal",
+  "Matthew": "Matt",
+  "Mark": "Mark",
+  "Luke": "Luke",
+  "John": "John",
+  "Acts": "Acts",
+  "Romans": "Rom",
+  "1 Corinthians": "1Cor",
+  "2 Corinthians": "2Cor",
+  "Galatians": "Gal",
+  "Ephesians": "Eph",
+  "Philippians": "Phil",
+  "Colossians": "Col",
+  "1 Thessalonians": "1Thess",
+  "2 Thessalonians": "2Thess",
+  "1 Timothy": "1Tim",
+  "2 Timothy": "2Tim",
+  "Titus": "Titus",
+  "Philemon": "Phlm",
+  "Hebrews": "Heb",
+  "James": "Jas",
+  "1 Peter": "1Pet",
+  "2 Peter": "2Pet",
+  "1 John": "1John",
+  "2 John": "2John",
+  "3 John": "3John",
+  "Jude": "Jude",
+  "Revelation": "Rev"
+};
+function passageReadLinks(chapterRef) {
+  // chapterRef = "Genesis 6" (a single expanded chapter reference)
+  const m = chapterRef.match(/^(.+)\s+(\d+)$/);
+  if (!m) return null;
+  const [, book, ch] = m;
+  const abbr = BIBLIA_ABBR[book] || book.replace(/ /g, "+");
+  const esvB = book.replace(/ /g, "+");
+  const csbB = encodeURIComponent(book.toLowerCase());
+  return {
+    esv: `https://www.esv.org/${esvB}+${ch}/`,
+    csb: `https://read.csbible.com/?book=${csbB}&chapter=${ch}`,
+    biblia: `https://biblia.com/bible/nasb2020/${abbr}.${ch}`
+  };
+}
+
+// ── PassageLinks popover ──────────────────────────────────────────────────────
+function PassageLinks({
+  chapters
+}) {
+  const [open, setOpen] = useState(false);
+  // Use first chapter for links (reader can page from there)
+  const firstChapter = chapters[0];
+  const links = firstChapter ? passageReadLinks(firstChapter) : null;
+  if (!links) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: e => {
+      e.stopPropagation();
+      setOpen(o => !o);
+    },
+    title: "Read passage",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: "4px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: C.muted,
+      borderRadius: 6,
+      transition: "color 0.15s"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "bookOpen",
+    size: 15,
+    color: open ? C.brown : C.muted,
+    strokeWidth: 1.5
+  })), open && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    onClick: e => {
+      e.stopPropagation();
+      setOpen(false);
+    },
+    style: {
+      position: "fixed",
+      inset: 0,
+      zIndex: 299
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "absolute",
+      right: 0,
+      top: "calc(100% + 4px)",
+      zIndex: 300,
+      background: "white",
+      border: `1px solid ${C.border}`,
+      borderRadius: 12,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
+      minWidth: 160,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px 4px",
+      borderBottom: `1px solid ${C.border}`
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 10,
+      color: C.muted,
+      fontFamily: F.sans,
+      textTransform: "uppercase",
+      letterSpacing: "0.08em"
+    }
+  }, "Read in…")), [{
+    label: "ESV",
+    url: links.esv
+  }, {
+    label: "CSB",
+    url: links.csb
+  }, {
+    label: "Biblia (NASB)",
+    url: links.biblia
+  }].map(({
+    label,
+    url
+  }) => /*#__PURE__*/React.createElement("a", {
+    key: label,
+    href: url,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    onClick: e => {
+      e.stopPropagation();
+      setOpen(false);
+    },
+    style: {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      padding: "10px 14px",
+      textDecoration: "none",
+      color: C.ink,
+      fontFamily: F.sans,
+      fontSize: 13,
+      borderBottom: `1px solid #f5f1eb`,
+      transition: "background 0.1s"
+    },
+    onMouseEnter: e => e.currentTarget.style.background = "#f9f6f2",
+    onMouseLeave: e => e.currentTarget.style.background = "none"
+  }, label, /*#__PURE__*/React.createElement("svg", {
+    width: "10",
+    height: "10",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: C.muted,
+    strokeWidth: "2",
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"
+  }), /*#__PURE__*/React.createElement("polyline", {
+    points: "15 3 21 3 21 9"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "10",
+    y1: "14",
+    x2: "21",
+    y2: "3"
+  })))))));
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // HOME SCREEN
 // ══════════════════════════════════════════════════════════════════════════════
@@ -2950,8 +3168,15 @@ function HomeScreen({
         const doneCount = chapters.filter(ch => eLogs.some(l => l.passage === ch)).length;
         const done = doneCount === chapters.length;
         const partial = doneCount > 0 && !done;
-        return /*#__PURE__*/React.createElement("button", {
+        return /*#__PURE__*/React.createElement("div", {
           key: label,
+          style: {
+            display: "flex",
+            alignItems: "center",
+            borderBottom: idx < entry.passages.length - 1 ? "1px solid #f5f1eb" : "none",
+            background: isOverdue ? "#fefafa" : "none"
+          }
+        }, /*#__PURE__*/React.createElement("button", {
           className: "passage-btn",
           style: {
             display: "flex",
@@ -2959,11 +3184,10 @@ function HomeScreen({
             gap: 14,
             padding: "12px 16px",
             border: "none",
-            background: isOverdue ? "#fefafa" : "none",
-            width: "100%",
+            background: "none",
+            flex: 1,
             cursor: "pointer",
             textAlign: "left",
-            borderBottom: idx < entry.passages.length - 1 ? "1px solid #f5f1eb" : "none",
             transition: "background 0.15s"
           },
           onClick: () => togglePassage(passage, entry.id, effectiveDate)
@@ -3011,7 +3235,13 @@ function HomeScreen({
             color: C.muted,
             fontFamily: F.sans
           }
-        }, chapters.length, " chapters")));
+        }, chapters.length, " chapters"))), /*#__PURE__*/React.createElement("div", {
+          style: {
+            paddingRight: 12
+          }
+        }, /*#__PURE__*/React.createElement(PassageLinks, {
+          chapters: chapters
+        })));
       }));
     }), allDone && /*#__PURE__*/React.createElement("div", {
       style: {
