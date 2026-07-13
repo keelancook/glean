@@ -2553,86 +2553,19 @@ function GleaningCard({
 }
 
 // ── Passage link URL builder ──────────────────────────────────────────────────
-const BIBLIA_ABBR = {
-  "Genesis": "Gen",
-  "Exodus": "Exod",
-  "Leviticus": "Lev",
-  "Numbers": "Num",
-  "Deuteronomy": "Deut",
-  "Joshua": "Josh",
-  "Judges": "Judg",
-  "Ruth": "Ruth",
-  "1 Samuel": "1Sam",
-  "2 Samuel": "2Sam",
-  "1 Kings": "1Kgs",
-  "2 Kings": "2Kgs",
-  "1 Chronicles": "1Chr",
-  "2 Chronicles": "2Chr",
-  "Ezra": "Ezra",
-  "Nehemiah": "Neh",
-  "Esther": "Esth",
-  "Job": "Job",
-  "Psalms": "Ps",
-  "Proverbs": "Prov",
-  "Ecclesiastes": "Eccl",
-  "Song of Solomon": "Song",
-  "Isaiah": "Isa",
-  "Jeremiah": "Jer",
-  "Lamentations": "Lam",
-  "Ezekiel": "Ezek",
-  "Daniel": "Dan",
-  "Hosea": "Hos",
-  "Joel": "Joel",
-  "Amos": "Amos",
-  "Obadiah": "Obad",
-  "Jonah": "Jonah",
-  "Micah": "Mic",
-  "Nahum": "Nah",
-  "Habakkuk": "Hab",
-  "Zephaniah": "Zeph",
-  "Haggai": "Hag",
-  "Zechariah": "Zech",
-  "Malachi": "Mal",
-  "Matthew": "Matt",
-  "Mark": "Mark",
-  "Luke": "Luke",
-  "John": "John",
-  "Acts": "Acts",
-  "Romans": "Rom",
-  "1 Corinthians": "1Cor",
-  "2 Corinthians": "2Cor",
-  "Galatians": "Gal",
-  "Ephesians": "Eph",
-  "Philippians": "Phil",
-  "Colossians": "Col",
-  "1 Thessalonians": "1Thess",
-  "2 Thessalonians": "2Thess",
-  "1 Timothy": "1Tim",
-  "2 Timothy": "2Tim",
-  "Titus": "Titus",
-  "Philemon": "Phlm",
-  "Hebrews": "Heb",
-  "James": "Jas",
-  "1 Peter": "1Pet",
-  "2 Peter": "2Pet",
-  "1 John": "1John",
-  "2 John": "2John",
-  "3 John": "3John",
-  "Jude": "Jude",
-  "Revelation": "Rev"
-};
+
 function passageReadLinks(chapterRef) {
   // chapterRef = "Genesis 6" (a single expanded chapter reference)
   const m = chapterRef.match(/^(.+)\s+(\d+)$/);
   if (!m) return null;
   const [, book, ch] = m;
-  const abbr = BIBLIA_ABBR[book] || book.replace(/ /g, "+");
   const esvB = book.replace(/ /g, "+");
   const csbB = encodeURIComponent(book.toLowerCase());
+  const nasbRef = encodeURIComponent(`${book} ${ch}`);
   return {
     esv: `https://www.esv.org/${esvB}+${ch}/`,
     csb: `https://read.csbible.com/?book=${csbB}&chapter=${ch}`,
-    biblia: `https://biblia.com/bible/nasb2020/${abbr}.${ch}`
+    nasb: `https://biblewebapp.com/study/#ref=${nasbRef}|ver=en_nasb`
   };
 }
 
@@ -2641,20 +2574,37 @@ function PassageLinks({
   chapters
 }) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState(null);
+  const btnRef = useRef(null);
   // Use first chapter for links (reader can page from there)
   const firstChapter = chapters[0];
   const links = firstChapter ? passageReadLinks(firstChapter) : null;
   if (!links) return null;
+  function toggleOpen(e) {
+    e.stopPropagation();
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      // Position popover below button, right-aligned to button's right edge,
+      // flipping to open upward if there isn't room below the viewport
+      const popoverHeight = 170; // approx height with 3 links + header
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpward = spaceBelow < popoverHeight;
+      setCoords({
+        left: Math.min(rect.right - 170, window.innerWidth - 176),
+        // keep on-screen
+        top: openUpward ? rect.top - popoverHeight - 4 : rect.bottom + 4
+      });
+    }
+    setOpen(o => !o);
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
       flexShrink: 0
     }
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: e => {
-      e.stopPropagation();
-      setOpen(o => !o);
-    },
+    ref: btnRef,
+    onClick: toggleOpen,
     title: "Read passage",
     style: {
       background: "none",
@@ -2673,7 +2623,7 @@ function PassageLinks({
     size: 15,
     color: open ? C.brown : C.muted,
     strokeWidth: 1.5
-  })), open && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  })), open && coords && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     onClick: e => {
       e.stopPropagation();
       setOpen(false);
@@ -2681,19 +2631,19 @@ function PassageLinks({
     style: {
       position: "fixed",
       inset: 0,
-      zIndex: 299
+      zIndex: 2999
     }
   }), /*#__PURE__*/React.createElement("div", {
     style: {
-      position: "absolute",
-      right: 0,
-      top: "calc(100% + 4px)",
-      zIndex: 300,
+      position: "fixed",
+      left: coords.left,
+      top: coords.top,
+      zIndex: 3000,
       background: "white",
       border: `1px solid ${C.border}`,
       borderRadius: 12,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.12)",
-      minWidth: 160,
+      boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
+      width: 170,
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -2716,8 +2666,8 @@ function PassageLinks({
     label: "CSB",
     url: links.csb
   }, {
-    label: "Biblia (NASB)",
-    url: links.biblia
+    label: "NASB",
+    url: links.nasb
   }].map(({
     label,
     url
