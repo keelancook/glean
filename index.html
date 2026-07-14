@@ -2570,6 +2570,9 @@ function passageReadLinks(chapterRef) {
 }
 
 // ── PassageLinks popover ──────────────────────────────────────────────────────
+const POPOVER_WIDTH = 176;
+const POPOVER_HEIGHT = 170; // approx height with header + 3 links
+const EDGE_MARGIN = 10;
 function PassageLinks({
   chapters
 }) {
@@ -2579,24 +2582,46 @@ function PassageLinks({
   // Use first chapter for links (reader can page from there)
   const firstChapter = chapters[0];
   const links = firstChapter ? passageReadLinks(firstChapter) : null;
-  if (!links) return null;
+  function computeCoords() {
+    if (!btnRef.current) return null;
+    const rect = btnRef.current.getBoundingClientRect();
+    const vw = document.documentElement.clientWidth;
+    const vh = document.documentElement.clientHeight;
+
+    // Horizontal: prefer right-aligning popover's right edge to button's right edge.
+    // Clamp so it never runs off either side of the actual viewport.
+    let left = rect.right - POPOVER_WIDTH;
+    left = Math.max(EDGE_MARGIN, Math.min(left, vw - POPOVER_WIDTH - EDGE_MARGIN));
+
+    // Vertical: open below by default, flip above if not enough room below.
+    const spaceBelow = vh - rect.bottom;
+    const openUpward = spaceBelow < POPOVER_HEIGHT + EDGE_MARGIN;
+    let top = openUpward ? rect.top - POPOVER_HEIGHT - 4 : rect.bottom + 4;
+    top = Math.max(EDGE_MARGIN, Math.min(top, vh - POPOVER_HEIGHT - EDGE_MARGIN));
+    return {
+      left,
+      top
+    };
+  }
   function toggleOpen(e) {
     e.stopPropagation();
-    if (!open && btnRef.current) {
-      const rect = btnRef.current.getBoundingClientRect();
-      // Position popover below button, right-aligned to button's right edge,
-      // flipping to open upward if there isn't room below the viewport
-      const popoverHeight = 170; // approx height with 3 links + header
-      const spaceBelow = window.innerHeight - rect.bottom;
-      const openUpward = spaceBelow < popoverHeight;
-      setCoords({
-        left: Math.min(rect.right - 170, window.innerWidth - 176),
-        // keep on-screen
-        top: openUpward ? rect.top - popoverHeight - 4 : rect.bottom + 4
-      });
-    }
+    if (!open) setCoords(computeCoords());
     setOpen(o => !o);
   }
+
+  // Re-close popover if the window is resized or scrolled while open —
+  // avoids the popover drifting away from its anchor button
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true); // capture phase: catches inner scroll containers too
+    return () => {
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [open]);
+  if (!links) return null;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: "relative",
@@ -2643,7 +2668,7 @@ function PassageLinks({
       border: `1px solid ${C.border}`,
       borderRadius: 12,
       boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
-      width: 170,
+      width: POPOVER_WIDTH,
       overflow: "hidden"
     }
   }, /*#__PURE__*/React.createElement("div", {
