@@ -2572,7 +2572,7 @@ function passageReadLinks(chapterRef) {
 // ── PassageLinks popover ──────────────────────────────────────────────────────
 const POPOVER_WIDTH = 176;
 const POPOVER_HEIGHT = 170; // approx height with header + 3 links
-const EDGE_MARGIN = 10;
+const EDGE_MARGIN = 8;
 function PassageLinks({
   chapters
 }) {
@@ -2588,15 +2588,14 @@ function PassageLinks({
     const vw = document.documentElement.clientWidth;
     const vh = document.documentElement.clientHeight;
 
-    // Horizontal: prefer right-aligning popover's right edge to button's right edge.
-    // Clamp so it never runs off either side of the actual viewport.
-    let left = rect.right - POPOVER_WIDTH;
+    // Center the popover directly over the button itself — momentary overlay,
+    // fine to cover the passage text underneath. Only nudge if it would run
+    // off the actual viewport edge.
+    let left = rect.left + rect.width / 2 - POPOVER_WIDTH / 2;
     left = Math.max(EDGE_MARGIN, Math.min(left, vw - POPOVER_WIDTH - EDGE_MARGIN));
 
-    // Vertical: open below by default, flip above if not enough room below.
-    const spaceBelow = vh - rect.bottom;
-    const openUpward = spaceBelow < POPOVER_HEIGHT + EDGE_MARGIN;
-    let top = openUpward ? rect.top - POPOVER_HEIGHT - 4 : rect.bottom + 4;
+    // Vertically centered on the button, slightly favoring downward
+    let top = rect.top + rect.height / 2 - POPOVER_HEIGHT / 2;
     top = Math.max(EDGE_MARGIN, Math.min(top, vh - POPOVER_HEIGHT - EDGE_MARGIN));
     return {
       left,
@@ -2622,33 +2621,7 @@ function PassageLinks({
     };
   }, [open]);
   if (!links) return null;
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "relative",
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("button", {
-    ref: btnRef,
-    onClick: toggleOpen,
-    title: "Read passage",
-    style: {
-      background: "none",
-      border: "none",
-      cursor: "pointer",
-      padding: "4px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      color: C.muted,
-      borderRadius: 6,
-      transition: "color 0.15s"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "bookOpen",
-    size: 15,
-    color: open ? C.brown : C.muted,
-    strokeWidth: 1.5
-  })), open && coords && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  const popoverContent = open && coords && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     onClick: e => {
       e.stopPropagation();
       setOpen(false);
@@ -2667,7 +2640,7 @@ function PassageLinks({
       background: "white",
       border: `1px solid ${C.border}`,
       borderRadius: 12,
-      boxShadow: "0 4px 20px rgba(0,0,0,0.16)",
+      boxShadow: "0 6px 28px rgba(0,0,0,0.22)",
       width: POPOVER_WIDTH,
       overflow: "hidden"
     }
@@ -2737,7 +2710,34 @@ function PassageLinks({
     y1: "14",
     x2: "21",
     y2: "3"
-  })))))));
+  }))))));
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative",
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    ref: btnRef,
+    onClick: toggleOpen,
+    title: "Read passage",
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: "4px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: C.muted,
+      borderRadius: 6,
+      transition: "color 0.15s"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "bookOpen",
+    size: 15,
+    color: open ? C.brown : C.muted,
+    strokeWidth: 1.5
+  })), popoverContent && ReactDOM.createPortal(popoverContent, document.body));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
