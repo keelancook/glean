@@ -3254,6 +3254,9 @@ function HomeScreen({
     prayerLogs: prayerLogs,
     prayerUpdates: prayerUpdates,
     refresh: refresh
+  }), /*#__PURE__*/React.createElement(AnsweredOnThisDayPanel, {
+    requests: prayerRequests,
+    today: today
   }), /*#__PURE__*/React.createElement(PastReflectionsPanel, {
     reflections: reflections,
     activePlans: activePlans,
@@ -7007,7 +7010,7 @@ function getTodaysPrayers(requests, dateStr) {
   const d = new Date(dateStr + "T12:00:00");
   const dow = d.getDay(); // 0=Sun
   const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-  const active = requests.filter(r => r.active && !r.answered_at);
+  const active = requests.filter(r => r.active && !r.answered_at && !r.archived_at);
   const daily = active.filter(r => r.schedule?.type === "daily");
   const weekly = active.filter(r => r.schedule?.type === "weekly" && r.schedule?.days?.includes(dow));
   const shufflePool = active.filter(r => r.schedule?.type === "shuffle");
@@ -7037,6 +7040,67 @@ function getTodaysPrayers(requests, dateStr) {
 }
 
 // ── Prayer home panel ─────────────────────────────────────────────────────────
+// ── Answered prayers on this day (anniversary match, like gleaning passages) ──
+function AnsweredOnThisDayPanel({
+  requests,
+  today
+}) {
+  const todayMD = today.slice(5); // MM-DD
+  const matches = requests.filter(r => r.answered_at && r.answered_at !== today && r.answered_at.slice(5) === todayMD);
+  if (!matches.length) return null;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontFamily: F.serif,
+      fontSize: 14,
+      fontWeight: 500,
+      color: C.ink
+    }
+  }, "Answered on this day"), matches.map(r => {
+    const yearsAgo = parseInt(today.slice(0, 4)) - parseInt(r.answered_at.slice(0, 4));
+    return /*#__PURE__*/React.createElement("div", {
+      key: r.id,
+      style: {
+        ...ss.card,
+        padding: "10px 14px",
+        background: "#fdfcfa"
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 14,
+        color: C.ink
+      }
+    }, r.title), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 10,
+        color: C.muted,
+        fontFamily: F.sans,
+        whiteSpace: "nowrap"
+      }
+    }, yearsAgo === 0 ? "This year" : `${yearsAgo} year${yearsAgo !== 1 ? "s" : ""} ago`)), r.answer_result && /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: "#6b5f54",
+        fontFamily: F.sans,
+        marginTop: 4,
+        lineHeight: 1.5
+      }
+    }, r.answer_result));
+  }));
+}
 function PrayerHomePanel({
   requests,
   prayerLogs,
@@ -7049,8 +7113,11 @@ function PrayerHomePanel({
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
   const [editBody, setEditBody] = useState("");
+  const [editTags, setEditTags] = useState("");
   const [newUpdate, setNewUpdate] = useState("");
   const [showUpdateInput, setShowUpdateInput] = useState(null);
+  const [answeringId, setAnsweringId] = useState(null);
+  const [answerResult, setAnswerResult] = useState("");
   if (todaysPrayers.length === 0) return null;
   const prayedToday = new Set(prayerLogs.filter(l => l.date === today).map(l => l.request_id));
   async function markPrayed(req) {
@@ -7071,10 +7138,25 @@ function PrayerHomePanel({
       refresh();
     }
   }
-  async function markAnswered(req) {
+  async function confirmAnswered(req) {
+    if (!answerResult.trim()) return; // required
     const updated = {
       ...req,
       answered_at: today,
+      active: false,
+      answer_result: answerResult.trim(),
+      updated_at: new Date().toISOString()
+    };
+    await dbPut("prayer_requests", updated);
+    setAnsweringId(null);
+    setAnswerResult("");
+    setExpanded(null);
+    refresh();
+  }
+  async function archiveRequest(req) {
+    const updated = {
+      ...req,
+      archived_at: today,
       active: false,
       updated_at: new Date().toISOString()
     };
@@ -7083,10 +7165,12 @@ function PrayerHomePanel({
     refresh();
   }
   async function saveEdit(req) {
+    const tags = editTags.split(",").map(t => t.trim()).filter(Boolean);
     await dbPut("prayer_requests", {
       ...req,
       title: editTitle.trim() || req.title,
       body: editBody,
+      tags,
       updated_at: new Date().toISOString()
     });
     setEditingId(null);
@@ -7135,6 +7219,7 @@ function PrayerHomePanel({
     const prayed = prayedToday.has(req.id);
     const isExpanded = expanded === req.id;
     const isEditing = editingId === req.id;
+    const isAnswering = answeringId === req.id;
     const updates = reqUpdates(req);
     return /*#__PURE__*/React.createElement("div", {
       key: req.id,
@@ -7162,26 +7247,44 @@ function PrayerHomePanel({
         justifyContent: "center",
         flexShrink: 0,
         cursor: "pointer",
-        transition: "all 0.2s",
-        flexShrink: 0
+        transition: "all 0.2s"
       }
     }, prayed && /*#__PURE__*/React.createElement(Icon, {
       name: "check",
       size: 11,
       color: C.gold,
       strokeWidth: 2.5
-    })), /*#__PURE__*/React.createElement("span", {
+    })), /*#__PURE__*/React.createElement("div", {
       onClick: () => setExpanded(isExpanded ? null : req.id),
       style: {
         flex: 1,
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
         fontFamily: F.serif,
         fontSize: 15,
         color: prayed ? "#b0a898" : C.ink,
         textDecoration: prayed ? "line-through" : "none",
-        cursor: "pointer",
         transition: "all 0.2s"
       }
-    }, req.title), /*#__PURE__*/React.createElement("button", {
+    }, req.title), req.tags?.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 3
+      }
+    }, req.tags.map(t => /*#__PURE__*/React.createElement("span", {
+      key: t,
+      style: {
+        ...ss.tag,
+        fontSize: 10,
+        padding: "1px 6px"
+      }
+    }, t)))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setExpanded(isExpanded ? null : req.id),
       style: {
         background: "none",
@@ -7203,7 +7306,7 @@ function PrayerHomePanel({
       strokeLinejoin: "round"
     }, /*#__PURE__*/React.createElement("polyline", {
       points: "6 9 12 15 18 9"
-    })))), isExpanded && !isEditing && /*#__PURE__*/React.createElement("div", {
+    })))), isExpanded && !isEditing && !isAnswering && /*#__PURE__*/React.createElement("div", {
       style: {
         borderTop: `1px solid #f0ebe3`,
         padding: "12px 14px",
@@ -7310,6 +7413,7 @@ function PrayerHomePanel({
         setEditingId(req.id);
         setEditTitle(req.title);
         setEditBody(req.body || "");
+        setEditTags((req.tags || []).join(", "));
       },
       style: {
         ...ss.btnGhost,
@@ -7325,7 +7429,10 @@ function PrayerHomePanel({
       color: "#6b5f54",
       strokeWidth: 1.75
     }), " Edit"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => markAnswered(req),
+      onClick: () => {
+        setAnsweringId(req.id);
+        setAnswerResult("");
+      },
       style: {
         ...ss.btnGhost,
         fontSize: 12,
@@ -7341,7 +7448,68 @@ function PrayerHomePanel({
       size: 11,
       color: C.green,
       strokeWidth: 2
-    }), " Answered"))), isExpanded && isEditing && /*#__PURE__*/React.createElement("div", {
+    }), " Answered"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => archiveRequest(req),
+      style: {
+        ...ss.btnGhost,
+        fontSize: 12,
+        padding: "5px 10px",
+        color: C.muted,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "database",
+      size: 11,
+      color: C.muted,
+      strokeWidth: 1.75
+    }), " Archive"))), isExpanded && isAnswering && /*#__PURE__*/React.createElement("div", {
+      style: {
+        borderTop: `1px solid #f0ebe3`,
+        padding: "12px 14px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: C.ink,
+        fontFamily: F.sans,
+        fontWeight: 500
+      }
+    }, "How was this answered?"), /*#__PURE__*/React.createElement("textarea", {
+      value: answerResult,
+      onChange: e => setAnswerResult(e.target.value),
+      placeholder: "What happened? How was this resolved?",
+      rows: 3,
+      style: {
+        ...ss.input,
+        resize: "vertical",
+        fontFamily: F.sans,
+        fontSize: 13
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        justifyContent: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setAnsweringId(null);
+        setAnswerResult("");
+      },
+      style: ss.btnGhost
+    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => confirmAnswered(req),
+      disabled: !answerResult.trim(),
+      style: {
+        ...ss.btnPrimary,
+        opacity: answerResult.trim() ? 1 : 0.5
+      }
+    }, "Mark Answered"))), isExpanded && isEditing && /*#__PURE__*/React.createElement("div", {
       style: {
         borderTop: `1px solid #f0ebe3`,
         padding: "12px 14px",
@@ -7360,6 +7528,11 @@ function PrayerHomePanel({
       rows: 4,
       minHeight: 80,
       placeholder: "Details, scripture, context…"
+    }), /*#__PURE__*/React.createElement("input", {
+      value: editTags,
+      onChange: e => setEditTags(e.target.value),
+      placeholder: "Tags, comma separated",
+      style: ss.input
     }), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -7496,7 +7669,31 @@ function AnsweredPrayerCard({
       flexDirection: "column",
       gap: 10
     }
-  }, req.body && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+  }, req.answer_result && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 10,
+      color: C.green,
+      fontFamily: F.sans,
+      textTransform: "uppercase",
+      letterSpacing: "0.08em",
+      marginBottom: 4,
+      fontWeight: 600
+    }
+  }, "How it was answered"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#edfaf1",
+      borderRadius: 8,
+      padding: "10px 12px",
+      borderLeft: `3px solid ${C.green}`
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 13,
+      color: C.ink,
+      fontFamily: F.sans,
+      lineHeight: 1.5
+    }
+  }, req.answer_result))), req.body && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 10,
       color: C.muted,
@@ -7507,7 +7704,16 @@ function AnsweredPrayerCard({
     }
   }, "Request"), /*#__PURE__*/React.createElement(MarkdownRenderer, {
     text: req.body
-  })), req.schedule && /*#__PURE__*/React.createElement("p", {
+  })), req.tags?.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 4
+    }
+  }, req.tags.map(t => /*#__PURE__*/React.createElement("span", {
+    key: t,
+    style: ss.tag
+  }, t))), req.schedule && /*#__PURE__*/React.createElement("p", {
     style: {
       fontSize: 11,
       color: C.muted,
@@ -7567,16 +7773,21 @@ function PrayerScreen({
   logs = [],
   refresh
 }) {
-  const [view, setView] = useState("active"); // "active" | "answered" | "add" | "stats"
+  const [view, setView] = useState("active"); // "active" | "answered" | "archived" | "add" | "stats"
   const [form, setForm] = useState({
     title: "",
     body: "",
+    tags: [],
     schedule: {
       type: "shuffle"
     },
     active: true
   });
+  const [tagInput, setTagInput] = useState("");
   const [editId, setEditId] = useState(null);
+  const [answeringId, setAnsweringId] = useState(null);
+  const [answerResult, setAnswerResult] = useState("");
+  const [filterTag, setFilterTag] = useState(null);
   const today = todayStr();
   const updF = (f, v) => setForm(x => ({
     ...x,
@@ -7589,8 +7800,13 @@ function PrayerScreen({
       [f]: v
     }
   }));
-  const active = requests.filter(r => r.active && !r.answered_at);
+  const active = requests.filter(r => r.active && !r.answered_at && !r.archived_at);
   const answered = requests.filter(r => r.answered_at);
+  const archived = requests.filter(r => r.archived_at && !r.answered_at);
+
+  // All tags across active requests, for filter pills
+  const allTags = [...new Set(active.flatMap(r => r.tags || []))].sort();
+  const filteredActive = filterTag ? active.filter(r => (r.tags || []).includes(filterTag)) : active;
   async function saveRequest() {
     if (!form.title.trim()) return;
     const rec = editId ? {
@@ -7607,11 +7823,13 @@ function PrayerScreen({
     setForm({
       title: "",
       body: "",
+      tags: [],
       schedule: {
         type: "shuffle"
       },
       active: true
     });
+    setTagInput("");
     setEditId(null);
     setView("active");
     refresh();
@@ -7624,8 +7842,49 @@ function PrayerScreen({
     for (const l of relLogs) await dbDelete("prayer_logs", l.id);
     refresh();
   }
+  async function confirmAnswered(req) {
+    if (!answerResult.trim()) return;
+    await dbPut("prayer_requests", {
+      ...req,
+      answered_at: today,
+      active: false,
+      answer_result: answerResult.trim(),
+      updated_at: new Date().toISOString()
+    });
+    setAnsweringId(null);
+    setAnswerResult("");
+    refresh();
+  }
+  async function archiveRequest(req) {
+    await dbPut("prayer_requests", {
+      ...req,
+      archived_at: today,
+      active: false,
+      updated_at: new Date().toISOString()
+    });
+    refresh();
+  }
+  async function restoreRequest(req) {
+    await dbPut("prayer_requests", {
+      ...req,
+      archived_at: null,
+      active: true,
+      updated_at: new Date().toISOString()
+    });
+    refresh();
+  }
+  function addTag() {
+    const t = tagInput.trim();
+    if (!t || form.tags.includes(t)) {
+      setTagInput("");
+      return;
+    }
+    updF("tags", [...form.tags, t]);
+    setTagInput("");
+  }
 
-  // Stats
+  // Stats — archived requests stop counting toward days-prayed once archived,
+  // but logs collected while they were active still count historically
   const totalAnswered = answered.length;
   const totalRequests = requests.length;
   const prayedDays = new Set(logs.map(l => l.date)).size;
@@ -7644,11 +7903,13 @@ function PrayerScreen({
       setForm({
         title: "",
         body: "",
+        tags: [],
         schedule: {
           type: "shuffle"
         },
         active: true
       });
+      setTagInput("");
     },
     style: ss.back
   }, /*#__PURE__*/React.createElement(Icon, {
@@ -7675,6 +7936,65 @@ function PrayerScreen({
     minHeight: 80,
     placeholder: "Details, scripture, context… (optional)"
   }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 11,
+      color: C.muted,
+      fontFamily: F.sans
+    }
+  }, "Tags"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    value: tagInput,
+    onChange: e => setTagInput(e.target.value),
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addTag();
+      }
+    },
+    placeholder: "Family, Health, Ministry…",
+    style: {
+      ...ss.input,
+      flex: 1
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: addTag,
+    style: ss.btnGhost
+  }, "Add")), form.tags.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 5
+    }
+  }, form.tags.map(t => /*#__PURE__*/React.createElement("span", {
+    key: t,
+    style: {
+      ...ss.tag,
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, t, /*#__PURE__*/React.createElement("button", {
+    onClick: () => updF("tags", form.tags.filter(x => x !== t)),
+    style: {
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      padding: 0,
+      lineHeight: 1,
+      color: C.muted,
+      fontSize: 12
+    }
+  }, "×"))))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -7776,20 +8096,22 @@ function PrayerScreen({
     style: {
       display: "flex",
       borderBottom: `1px solid ${C.border}`,
-      gap: 0
+      gap: 0,
+      overflowX: "auto"
     }
-  }, [["active", `Active (${active.length})`], ["answered", `Answered (${answered.length})`], ["stats", "Stats"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
+  }, [["active", `Active (${active.length})`], ["answered", `Answered (${answered.length})`], ["archived", `Archived (${archived.length})`], ["stats", "Stats"]].map(([id, label]) => /*#__PURE__*/React.createElement("button", {
     key: id,
     onClick: () => setView(id),
     style: {
-      flex: 1,
+      flex: "1 0 auto",
       padding: "9px 6px",
       background: "none",
       border: "none",
       cursor: "pointer",
       fontFamily: F.sans,
-      fontSize: 12,
+      fontSize: 11,
       color: view === id ? C.brown : C.muted,
+      whiteSpace: "nowrap",
       borderBottom: view === id ? `2px solid ${C.brown}` : "2px solid transparent",
       transition: "all 0.15s"
     }
@@ -7799,13 +8121,44 @@ function PrayerScreen({
       flexDirection: "column",
       gap: 8
     }
-  }, active.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+  }, allTags.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6
+    }
+  }, allTags.map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => setFilterTag(filterTag === t ? null : t),
+    style: {
+      padding: "3px 10px",
+      borderRadius: 20,
+      border: `1px solid ${filterTag === t ? C.brown : C.border}`,
+      background: filterTag === t ? C.brown : "white",
+      color: filterTag === t ? "white" : C.ink,
+      fontFamily: F.sans,
+      fontSize: 11,
+      cursor: "pointer"
+    }
+  }, t)), filterTag && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterTag(null),
+    style: {
+      padding: "3px 10px",
+      fontSize: 11,
+      color: C.muted,
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      fontFamily: F.sans
+    }
+  }, "Clear")), filteredActive.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "sun",
     title: "No active requests",
     body: "Add your first prayer request to begin."
-  }), active.map(req => {
+  }), filteredActive.map(req => {
     const reqLogs = logs.filter(l => l.request_id === req.id);
     const schedLabel = req.schedule?.type === "daily" ? "Daily" : req.schedule?.type === "weekly" ? `Weekly: ${(req.schedule.days || []).map(d => SCHEDULE_DAYS[d]).join(", ")}` : "Rotating";
+    const isAnswering = answeringId === req.id;
     return /*#__PURE__*/React.createElement("div", {
       key: req.id,
       style: {
@@ -7841,6 +8194,7 @@ function PrayerScreen({
         setForm({
           title: req.title,
           body: req.body || "",
+          tags: req.tags || [],
           schedule: req.schedule || {
             type: "shuffle"
           },
@@ -7870,11 +8224,21 @@ function PrayerScreen({
         fontSize: 11,
         color: C.red
       }
-    }, "Delete"))), /*#__PURE__*/React.createElement("div", {
+    }, "Delete"))), req.tags?.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 4
+      }
+    }, req.tags.map(t => /*#__PURE__*/React.createElement("span", {
+      key: t,
+      style: ss.tag
+    }, t))), /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         alignItems: "center",
-        gap: 10
+        gap: 10,
+        flexWrap: "wrap"
       }
     }, /*#__PURE__*/React.createElement("span", {
       style: {
@@ -7901,7 +8265,93 @@ function PrayerScreen({
         fontFamily: F.sans,
         lineHeight: 1.5
       }
-    }, req.body.slice(0, 100), req.body.length > 100 ? "…" : ""));
+    }, req.body.slice(0, 100), req.body.length > 100 ? "…" : ""), isAnswering ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        marginTop: 4
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: C.ink,
+        fontFamily: F.sans,
+        fontWeight: 500
+      }
+    }, "How was this answered?"), /*#__PURE__*/React.createElement("textarea", {
+      value: answerResult,
+      onChange: e => setAnswerResult(e.target.value),
+      placeholder: "What happened? How was this resolved?",
+      rows: 3,
+      style: {
+        ...ss.input,
+        resize: "vertical",
+        fontFamily: F.sans,
+        fontSize: 13
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        justifyContent: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setAnsweringId(null);
+        setAnswerResult("");
+      },
+      style: ss.btnGhost
+    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => confirmAnswered(req),
+      disabled: !answerResult.trim(),
+      style: {
+        ...ss.btnPrimary,
+        opacity: answerResult.trim() ? 1 : 0.5
+      }
+    }, "Mark Answered"))) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 6,
+        marginTop: 2
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setAnsweringId(req.id);
+        setAnswerResult("");
+      },
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "4px 10px",
+        color: C.green,
+        borderColor: C.green,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "check",
+      size: 10,
+      color: C.green,
+      strokeWidth: 2
+    }), " Answered"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => archiveRequest(req),
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "4px 10px",
+        color: C.muted,
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "database",
+      size: 10,
+      color: C.muted,
+      strokeWidth: 1.75
+    }), " Archive")));
   })), view === "answered" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -7934,6 +8384,87 @@ function PrayerScreen({
       daysAdded: daysAdded,
       daysAnswered: daysAnswered
     });
+  })), view === "archived" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, archived.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+    icon: "database",
+    title: "No archived requests",
+    body: "Archive requests you've stepped back from without marking them answered."
+  }), archived.map(req => {
+    const reqLogs = logs.filter(l => l.request_id === req.id);
+    return /*#__PURE__*/React.createElement("div", {
+      key: req.id,
+      style: {
+        ...ss.card,
+        padding: "12px 14px",
+        opacity: 0.75,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 8
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontFamily: F.serif,
+        fontSize: 14,
+        color: C.ink
+      }
+    }, req.title), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        background: "#f0ebe3",
+        color: C.muted,
+        borderRadius: 20,
+        padding: "2px 8px",
+        fontFamily: F.sans,
+        whiteSpace: "nowrap"
+      }
+    }, "Archived")), req.tags?.length > 0 && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 4
+      }
+    }, req.tags.map(t => /*#__PURE__*/React.createElement("span", {
+      key: t,
+      style: ss.tag
+    }, t))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 10
+      }
+    }, req.archived_at && /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans
+      }
+    }, "Archived: ", fmtDate(req.archived_at)), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans
+      }
+    }, "· prayed ", reqLogs.length, " day", reqLogs.length !== 1 ? "s" : "", " (while active)")), /*#__PURE__*/React.createElement("button", {
+      onClick: () => restoreRequest(req),
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "4px 10px",
+        alignSelf: "flex-start"
+      }
+    }, "Restore to Active"));
   })), view === "stats" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
