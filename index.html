@@ -432,6 +432,20 @@ const Icon = ({
     }), /*#__PURE__*/React.createElement("path", {
       d: "M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"
     })),
+    archiveBox: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("rect", {
+      x: "2",
+      y: "4",
+      width: "20",
+      height: "5",
+      rx: "1"
+    }), /*#__PURE__*/React.createElement("path", {
+      d: "M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"
+    }), /*#__PURE__*/React.createElement("line", {
+      x1: "10",
+      y1: "13",
+      x2: "14",
+      y2: "13"
+    })),
     shield: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("path", {
       d: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
     })),
@@ -4429,6 +4443,10 @@ function JournalScreen({
     };
   });
   const [filterDay, setFilterDay] = useState(null); // "YYYY-MM-DD" or null
+  const [filterPassages, setFilterPassages] = useState([]); // multi-select passage tags
+  const [filterMode, setFilterMode] = useState("or"); // "or" | "and"
+  const [showExport, setShowExport] = useState(false);
+  const [exportIncludeBody, setExportIncludeBody] = useState(true);
   const {
     shareText,
     Toast: JournalToast
@@ -4456,10 +4474,45 @@ function JournalScreen({
   }
   const filtered = [...reflections].sort((a, b) => b.date.localeCompare(a.date)).filter(r => {
     if (filterDay && r.date !== filterDay) return false;
+    if (filterPassages.length) {
+      const match = filterMode === "and" ? filterPassages.every(p => r.passages.includes(p)) : filterPassages.some(p => r.passages.includes(p));
+      if (!match) return false;
+    }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return r.body.toLowerCase().includes(q) || r.passages.some(p => p.toLowerCase().includes(q));
   });
+
+  // All passage tags across every gleaning, for the filter pills
+  const allPassageTags = [...new Set(reflections.flatMap(r => r.passages || []))].sort();
+  function toggleFilterPassage(p) {
+    setFilterPassages(f => f.includes(p) ? f.filter(x => x !== p) : [...f, p]);
+  }
+  function exportGleaningsMarkdown() {
+    const heading = filterPassages.length ? `Gleanings — ${filterPassages.join(", ")}` : "Gleanings — All";
+    const lines = [`# ${heading}`, ``, `*Exported ${fmtDate(todayStr())}*`, ``];
+    filtered.forEach(r => {
+      lines.push(`## ${fmtDate(r.date)}`);
+      if (r.passages?.length) lines.push(`*Passages: ${r.passages.join(", ")}*`);
+      lines.push(``);
+      if (exportIncludeBody) lines.push(r.body, ``);
+      lines.push(`---`, ``);
+    });
+    const md = lines.join("\n");
+    const filename = filterPassages.length ? `gleanings-${filterPassages.join("-").toLowerCase().replace(/\s+/g, "-")}.md` : `gleanings-all.md`;
+    const blob = new Blob([md], {
+      type: "text/markdown"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setShowExport(false);
+  }
   if (selected) return /*#__PURE__*/React.createElement("div", {
     style: ss.screen
   }, /*#__PURE__*/React.createElement("div", {
@@ -4746,7 +4799,130 @@ function JournalScreen({
       ...ss.input,
       paddingLeft: 34
     }
-  })), filtered.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+  })), allPassageTags.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 6,
+      alignItems: "center"
+    }
+  }, allPassageTags.map(p => /*#__PURE__*/React.createElement("button", {
+    key: p,
+    onClick: () => toggleFilterPassage(p),
+    style: {
+      padding: "3px 10px",
+      borderRadius: 20,
+      border: `1px solid ${filterPassages.includes(p) ? C.brown : C.border}`,
+      background: filterPassages.includes(p) ? C.brown : "white",
+      color: filterPassages.includes(p) ? "white" : C.ink,
+      fontFamily: F.sans,
+      fontSize: 11,
+      cursor: "pointer"
+    }
+  }, p)), filterPassages.length > 0 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterPassages([]),
+    style: {
+      padding: "3px 10px",
+      fontSize: 11,
+      color: C.muted,
+      background: "none",
+      border: "none",
+      cursor: "pointer",
+      fontFamily: F.sans
+    }
+  }, "Clear"), filterPassages.length > 1 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterMode(m => m === "or" ? "and" : "or"),
+    title: filterMode === "or" ? "Matching any selected passage — tap for all" : "Matching all selected passages — tap for any",
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      padding: "3px 9px",
+      borderRadius: 20,
+      border: `1px solid ${C.border}`,
+      background: "#f9f6f2",
+      cursor: "pointer",
+      fontFamily: F.sans,
+      fontSize: 10,
+      color: C.muted
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: filterMode === "or" ? 700 : 400,
+      color: filterMode === "or" ? C.brown : C.muted
+    }
+  }, "Any"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: 0.4
+    }
+  }, "/"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: filterMode === "and" ? 700 : 400,
+      color: filterMode === "and" ? C.brown : C.muted
+    }
+  }, "All")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowExport(s => !s),
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "3px 10px",
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      marginLeft: "auto"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "upload2",
+    size: 10,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), " Export")), showExport && /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...ss.card,
+      padding: "10px 12px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.ink,
+      fontFamily: F.sans
+    }
+  }, "Export ", filtered.length, " gleaning", filtered.length !== 1 ? "s" : "", filterPassages.length ? ` tagged ${filterMode === "and" ? "all of" : "any of"}: ${filterPassages.join(", ")}` : "", " as markdown"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      color: C.ink,
+      fontFamily: F.sans,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: exportIncludeBody,
+    onChange: e => setExportIncludeBody(e.target.checked)
+  }), "Include full gleaning text"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowExport(false),
+    style: ss.btnGhost
+  }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    onClick: exportGleaningsMarkdown,
+    style: ss.btnPrimary
+  }, "Download")))), filtered.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "pen",
     title: filterDay ? "No gleanings this day" : "No gleanings yet",
     body: filterDay ? "Try another day or clear the filter." : "Write your first gleaning from the Home screen."
@@ -7433,38 +7609,36 @@ function PrayerHomePanel({
         setAnsweringId(req.id);
         setAnswerResult("");
       },
+      title: "Mark answered",
       style: {
         ...ss.btnGhost,
-        fontSize: 12,
-        padding: "5px 10px",
+        padding: "5px 9px",
         color: C.green,
         borderColor: C.green,
         display: "flex",
-        alignItems: "center",
-        gap: 4
+        alignItems: "center"
       }
     }, /*#__PURE__*/React.createElement(Icon, {
       name: "check",
-      size: 11,
+      size: 13,
       color: C.green,
-      strokeWidth: 2
-    }), " Answered"), /*#__PURE__*/React.createElement("button", {
+      strokeWidth: 2.25
+    })), /*#__PURE__*/React.createElement("button", {
       onClick: () => archiveRequest(req),
+      title: "Archive",
       style: {
         ...ss.btnGhost,
-        fontSize: 12,
-        padding: "5px 10px",
+        padding: "5px 9px",
         color: C.muted,
         display: "flex",
-        alignItems: "center",
-        gap: 4
+        alignItems: "center"
       }
     }, /*#__PURE__*/React.createElement(Icon, {
-      name: "database",
-      size: 11,
+      name: "archiveBox",
+      size: 13,
       color: C.muted,
       strokeWidth: 1.75
-    }), " Archive"))), isExpanded && isAnswering && /*#__PURE__*/React.createElement("div", {
+    })))), isExpanded && isAnswering && /*#__PURE__*/React.createElement("div", {
       style: {
         borderTop: `1px solid #f0ebe3`,
         padding: "12px 14px",
@@ -7556,9 +7730,20 @@ function AnsweredPrayerCard({
   daysPrayed,
   duration,
   daysAdded,
-  daysAnswered
+  daysAnswered,
+  refresh
 }) {
   const [expanded, setExpanded] = useState(false);
+  async function unanswer() {
+    await dbPut("prayer_requests", {
+      ...req,
+      answered_at: null,
+      answer_result: null,
+      active: true,
+      updated_at: new Date().toISOString()
+    });
+    if (refresh) refresh();
+  }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
@@ -7762,7 +7947,16 @@ function AnsweredPrayerCard({
       fontFamily: F.sans,
       fontStyle: "italic"
     }
-  }, "No additional details recorded.")));
+  }, "No additional details recorded."), /*#__PURE__*/React.createElement("button", {
+    onClick: unanswer,
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "5px 10px",
+      alignSelf: "flex-start",
+      color: C.muted
+    }
+  }, "Mark not answered")));
 }
 
 // ── Full Prayer management screen ─────────────────────────────────────────────
@@ -7787,7 +7981,15 @@ function PrayerScreen({
   const [editId, setEditId] = useState(null);
   const [answeringId, setAnsweringId] = useState(null);
   const [answerResult, setAnswerResult] = useState("");
-  const [filterTag, setFilterTag] = useState(null);
+  const [filterTags, setFilterTags] = useState([]); // multi-select
+  const [filterMode, setFilterMode] = useState("or"); // "or" | "and"
+  const [showExport, setShowExport] = useState(false);
+  const [exportIncludeDetails, setExportIncludeDetails] = useState(true);
+  const [expandedActiveId, setExpandedActiveId] = useState(null);
+  const [editUpdateId, setEditUpdateId] = useState(null);
+  const [editUpdateText, setEditUpdateText] = useState("");
+  const [newUpdateFor, setNewUpdateFor] = useState(null);
+  const [newUpdateText, setNewUpdateText] = useState("");
   const today = todayStr();
   const updF = (f, v) => setForm(x => ({
     ...x,
@@ -7806,7 +8008,12 @@ function PrayerScreen({
 
   // All tags across active requests, for filter pills
   const allTags = [...new Set(active.flatMap(r => r.tags || []))].sort();
-  const filteredActive = filterTag ? active.filter(r => (r.tags || []).includes(filterTag)) : active;
+  // All tags across every request ever, for the tag-cloud in the add/edit form
+  const allTagsEver = [...new Set(requests.flatMap(r => r.tags || []))].sort();
+  const filteredActive = filterTags.length ? active.filter(r => filterMode === "and" ? filterTags.every(t => (r.tags || []).includes(t)) : filterTags.some(t => (r.tags || []).includes(t))) : active;
+  function toggleFilterTag(t) {
+    setFilterTags(f => f.includes(t) ? f.filter(x => x !== t) : [...f, t]);
+  }
   async function saveRequest() {
     if (!form.title.trim()) return;
     const rec = editId ? {
@@ -7872,6 +8079,69 @@ function PrayerScreen({
       updated_at: new Date().toISOString()
     });
     refresh();
+  }
+  async function addUpdateTo(req) {
+    if (!newUpdateText.trim()) return;
+    await dbPut("prayer_updates", {
+      id: uuid(),
+      request_id: req.id,
+      text: newUpdateText.trim(),
+      created_at: new Date().toISOString()
+    });
+    setNewUpdateText("");
+    setNewUpdateFor(null);
+    refresh();
+  }
+  async function saveUpdateEdit(update) {
+    if (!editUpdateText.trim()) return;
+    await dbPut("prayer_updates", {
+      ...update,
+      text: editUpdateText.trim(),
+      updated_at: new Date().toISOString()
+    });
+    setEditUpdateId(null);
+    setEditUpdateText("");
+    refresh();
+  }
+  async function deleteUpdate(update) {
+    await dbDelete("prayer_updates", update.id);
+    refresh();
+  }
+  function exportMarkdown() {
+    const list = filteredActive;
+    const heading = filterTags.length ? `Prayer List — ${filterTags.join(", ")}` : "Prayer List — All Active Requests";
+    const lines = [`# ${heading}`, ``, `*Exported ${fmtDate(today)}*`, ``];
+    list.forEach(req => {
+      lines.push(`## ${req.title}`);
+      if (req.tags?.length) lines.push(`*Tags: ${req.tags.join(", ")}*`);
+      lines.push(``);
+      if (exportIncludeDetails && req.body) {
+        lines.push(req.body, ``);
+      }
+      if (exportIncludeDetails) {
+        const reqUpdates = updates.filter(u => u.request_id === req.id).sort((a, b) => a.created_at.localeCompare(b.created_at));
+        if (reqUpdates.length) {
+          lines.push(`**Updates:**`);
+          reqUpdates.forEach(u => lines.push(`- ${fmtDate(u.created_at.slice(0, 10))}: ${u.text}`));
+          lines.push(``);
+        }
+      }
+      lines.push(`---`, ``);
+    });
+    const md = lines.join("\n");
+    const filename = filterTags.length ? `prayer-list-${filterTags.join("-").toLowerCase().replace(/\s+/g, "-")}.md` : `prayer-list-all.md`;
+    const blob = new Blob([md], {
+      type: "text/markdown"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setShowExport(false);
   }
   function addTag() {
     const t = tagInput.trim();
@@ -7994,7 +8264,40 @@ function PrayerScreen({
       color: C.muted,
       fontSize: 12
     }
-  }, "×"))))), /*#__PURE__*/React.createElement("div", {
+  }, "×")))), allTagsEver.filter(t => !form.tags.includes(t)).length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexDirection: "column",
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 10,
+      color: C.muted,
+      fontFamily: F.sans,
+      textTransform: "uppercase",
+      letterSpacing: "0.06em"
+    }
+  }, "Existing tags"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      flexWrap: "wrap",
+      gap: 5
+    }
+  }, allTagsEver.filter(t => !form.tags.includes(t)).map(t => /*#__PURE__*/React.createElement("button", {
+    key: t,
+    onClick: () => updF("tags", [...form.tags, t]),
+    style: {
+      padding: "3px 10px",
+      borderRadius: 20,
+      border: `1px solid ${C.border}`,
+      background: "white",
+      color: C.ink,
+      fontFamily: F.sans,
+      fontSize: 11,
+      cursor: "pointer"
+    }
+  }, "+ ", t))))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -8124,24 +8427,31 @@ function PrayerScreen({
   }, allTags.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
       flexWrap: "wrap",
-      gap: 6
+      gap: 6,
+      alignItems: "center"
     }
   }, allTags.map(t => /*#__PURE__*/React.createElement("button", {
     key: t,
-    onClick: () => setFilterTag(filterTag === t ? null : t),
+    onClick: () => toggleFilterTag(t),
     style: {
       padding: "3px 10px",
       borderRadius: 20,
-      border: `1px solid ${filterTag === t ? C.brown : C.border}`,
-      background: filterTag === t ? C.brown : "white",
-      color: filterTag === t ? "white" : C.ink,
+      border: `1px solid ${filterTags.includes(t) ? C.brown : C.border}`,
+      background: filterTags.includes(t) ? C.brown : "white",
+      color: filterTags.includes(t) ? "white" : C.ink,
       fontFamily: F.sans,
       fontSize: 11,
       cursor: "pointer"
     }
-  }, t)), filterTag && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setFilterTag(null),
+  }, t)), filterTags.length > 0 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterTags([]),
     style: {
       padding: "3px 10px",
       fontSize: 11,
@@ -8151,14 +8461,103 @@ function PrayerScreen({
       cursor: "pointer",
       fontFamily: F.sans
     }
-  }, "Clear")), filteredActive.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
+  }, "Clear"), filterTags.length > 1 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterMode(m => m === "or" ? "and" : "or"),
+    title: filterMode === "or" ? "Matching any selected tag — tap for all" : "Matching all selected tags — tap for any",
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      padding: "3px 9px",
+      borderRadius: 20,
+      border: `1px solid ${C.border}`,
+      background: "#f9f6f2",
+      cursor: "pointer",
+      fontFamily: F.sans,
+      fontSize: 10,
+      color: C.muted
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: filterMode === "or" ? 700 : 400,
+      color: filterMode === "or" ? C.brown : C.muted
+    }
+  }, "Any"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      opacity: 0.4
+    }
+  }, "/"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: filterMode === "and" ? 700 : 400,
+      color: filterMode === "and" ? C.brown : C.muted
+    }
+  }, "All")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowExport(s => !s),
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "3px 10px",
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      marginLeft: "auto"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "upload2",
+    size: 10,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), " Export")), showExport && /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...ss.card,
+      padding: "10px 12px",
+      display: "flex",
+      flexDirection: "column",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      color: C.ink,
+      fontFamily: F.sans
+    }
+  }, "Export ", filteredActive.length, " request", filteredActive.length !== 1 ? "s" : "", filterTags.length ? ` tagged ${filterMode === "and" ? "all of" : "any of"}: ${filterTags.join(", ")}` : "", " as markdown"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      fontSize: 12,
+      color: C.ink,
+      fontFamily: F.sans,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "checkbox",
+    checked: exportIncludeDetails,
+    onChange: e => setExportIncludeDetails(e.target.checked)
+  }), "Include notes and updates"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 6,
+      justifyContent: "flex-end"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowExport(false),
+    style: ss.btnGhost
+  }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    onClick: exportMarkdown,
+    style: ss.btnPrimary
+  }, "Download")))), filteredActive.length === 0 && /*#__PURE__*/React.createElement(EmptyState, {
     icon: "sun",
     title: "No active requests",
     body: "Add your first prayer request to begin."
   }), filteredActive.map(req => {
     const reqLogs = logs.filter(l => l.request_id === req.id);
+    const reqUpdatesList = updates.filter(u => u.request_id === req.id).sort((a, b) => b.created_at.localeCompare(a.created_at));
     const schedLabel = req.schedule?.type === "daily" ? "Daily" : req.schedule?.type === "weekly" ? `Weekly: ${(req.schedule.days || []).map(d => SCHEDULE_DAYS[d]).join(", ")}` : "Rotating";
     const isAnswering = answeringId === req.id;
+    const isExpanded = expandedActiveId === req.id;
+    const isAddingUpdate = newUpdateFor === req.id;
     return /*#__PURE__*/React.createElement("div", {
       key: req.id,
       style: {
@@ -8252,20 +8651,209 @@ function PrayerScreen({
         color: C.muted,
         fontFamily: F.sans
       }
-    }, "· ", reqLogs.length, " day", reqLogs.length !== 1 ? "s" : "", " prayed"), /*#__PURE__*/React.createElement("span", {
+    }, "· ", reqLogs.length, " day", reqLogs.length !== 1 ? "s" : "", " prayed"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setExpandedActiveId(isExpanded ? null : req.id),
       style: {
         fontSize: 11,
-        color: C.muted,
-        fontFamily: F.sans
+        color: C.brown,
+        fontFamily: F.sans,
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+        textDecoration: "underline"
       }
-    }, "· ", updates.filter(u => u.request_id === req.id).length, " update", updates.filter(u => u.request_id === req.id).length !== 1 ? "s" : "")), req.body && /*#__PURE__*/React.createElement("p", {
+    }, "· ", reqUpdatesList.length, " update", reqUpdatesList.length !== 1 ? "s" : "")), req.body && /*#__PURE__*/React.createElement("p", {
       style: {
         fontSize: 12,
         color: "#6b5f54",
         fontFamily: F.sans,
         lineHeight: 1.5
       }
-    }, req.body.slice(0, 100), req.body.length > 100 ? "…" : ""), isAnswering ? /*#__PURE__*/React.createElement("div", {
+    }, req.body.slice(0, 100), req.body.length > 100 ? "…" : ""), isExpanded && /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+        borderTop: `1px solid #f0ebe3`,
+        paddingTop: 8,
+        marginTop: 2
+      }
+    }, reqUpdatesList.map(u => editUpdateId === u.id ? /*#__PURE__*/React.createElement("div", {
+      key: u.id,
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 5
+      }
+    }, /*#__PURE__*/React.createElement("textarea", {
+      value: editUpdateText,
+      onChange: e => setEditUpdateText(e.target.value),
+      rows: 2,
+      style: {
+        ...ss.input,
+        resize: "vertical",
+        fontFamily: F.sans,
+        fontSize: 12
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        justifyContent: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setEditUpdateId(null);
+        setEditUpdateText("");
+      },
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "3px 8px"
+      }
+    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => saveUpdateEdit(u),
+      style: {
+        ...ss.btnPrimary,
+        fontSize: 11,
+        padding: "3px 8px"
+      }
+    }, "Save"))) : /*#__PURE__*/React.createElement("div", {
+      key: u.id,
+      style: {
+        background: "#f9f6f2",
+        borderRadius: 8,
+        padding: "7px 9px",
+        borderLeft: `3px solid ${C.brown}`,
+        display: "flex",
+        flexDirection: "column",
+        gap: 3
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 6
+      }
+    }, /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 10,
+        color: C.muted,
+        fontFamily: F.sans
+      }
+    }, fmtDate(u.created_at.slice(0, 10))), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 8,
+        flexShrink: 0
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setEditUpdateId(u.id);
+        setEditUpdateText(u.text);
+      },
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+        color: C.muted
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "pen",
+      size: 10,
+      color: C.muted,
+      strokeWidth: 1.75
+    })), /*#__PURE__*/React.createElement("button", {
+      onClick: () => deleteUpdate(u),
+      style: {
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        padding: 0,
+        color: C.red
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "trash",
+      size: 10,
+      color: C.red,
+      strokeWidth: 1.75
+    })))), /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 12,
+        color: C.ink,
+        fontFamily: F.sans,
+        lineHeight: 1.5
+      }
+    }, u.text))), reqUpdatesList.length === 0 && /*#__PURE__*/React.createElement("p", {
+      style: {
+        fontSize: 11,
+        color: C.muted,
+        fontFamily: F.sans,
+        fontStyle: "italic"
+      }
+    }, "No updates yet."), isAddingUpdate ? /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 5
+      }
+    }, /*#__PURE__*/React.createElement("textarea", {
+      value: newUpdateText,
+      onChange: e => setNewUpdateText(e.target.value),
+      placeholder: "What has developed with this request?",
+      rows: 2,
+      style: {
+        ...ss.input,
+        resize: "vertical",
+        fontFamily: F.sans,
+        fontSize: 12
+      }
+    }), /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        gap: 5,
+        justifyContent: "flex-end"
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setNewUpdateFor(null);
+        setNewUpdateText("");
+      },
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "3px 8px"
+      }
+    }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+      onClick: () => addUpdateTo(req),
+      style: {
+        ...ss.btnPrimary,
+        fontSize: 11,
+        padding: "3px 8px"
+      }
+    }, "Add"))) : /*#__PURE__*/React.createElement("button", {
+      onClick: () => {
+        setNewUpdateFor(req.id);
+        setNewUpdateText("");
+      },
+      style: {
+        ...ss.btnGhost,
+        fontSize: 11,
+        padding: "4px 9px",
+        alignSelf: "flex-start",
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }
+    }, /*#__PURE__*/React.createElement(Icon, {
+      name: "plus",
+      size: 10,
+      color: "#6b5f54",
+      strokeWidth: 2
+    }), " Add Update")), isAnswering ? /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
         flexDirection: "column",
@@ -8320,38 +8908,36 @@ function PrayerScreen({
         setAnsweringId(req.id);
         setAnswerResult("");
       },
+      title: "Mark answered",
       style: {
         ...ss.btnGhost,
-        fontSize: 11,
-        padding: "4px 10px",
+        padding: "4px 9px",
         color: C.green,
         borderColor: C.green,
         display: "flex",
-        alignItems: "center",
-        gap: 4
+        alignItems: "center"
       }
     }, /*#__PURE__*/React.createElement(Icon, {
       name: "check",
-      size: 10,
+      size: 12,
       color: C.green,
-      strokeWidth: 2
-    }), " Answered"), /*#__PURE__*/React.createElement("button", {
+      strokeWidth: 2.25
+    })), /*#__PURE__*/React.createElement("button", {
       onClick: () => archiveRequest(req),
+      title: "Archive",
       style: {
         ...ss.btnGhost,
-        fontSize: 11,
-        padding: "4px 10px",
+        padding: "4px 9px",
         color: C.muted,
         display: "flex",
-        alignItems: "center",
-        gap: 4
+        alignItems: "center"
       }
     }, /*#__PURE__*/React.createElement(Icon, {
-      name: "database",
-      size: 10,
+      name: "archiveBox",
+      size: 12,
       color: C.muted,
       strokeWidth: 1.75
-    }), " Archive")));
+    }))));
   })), view === "answered" && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -8382,7 +8968,8 @@ function PrayerScreen({
       daysPrayed: daysPrayed,
       duration: duration,
       daysAdded: daysAdded,
-      daysAnswered: daysAnswered
+      daysAnswered: daysAnswered,
+      refresh: refresh
     });
   })), view === "archived" && /*#__PURE__*/React.createElement("div", {
     style: {
