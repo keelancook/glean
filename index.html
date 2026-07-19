@@ -4443,8 +4443,8 @@ function JournalScreen({
     };
   });
   const [filterDay, setFilterDay] = useState(null); // "YYYY-MM-DD" or null
-  const [filterPassages, setFilterPassages] = useState([]); // multi-select passage tags
-  const [filterMode, setFilterMode] = useState("or"); // "or" | "and"
+  const [filterBook, setFilterBook] = useState(""); // "" = no book selected
+  const [filterChapters, setFilterChapters] = useState([]); // chapter numbers within filterBook
   const [showExport, setShowExport] = useState(false);
   const [exportIncludeBody, setExportIncludeBody] = useState(true);
   const {
@@ -4474,22 +4474,36 @@ function JournalScreen({
   }
   const filtered = [...reflections].sort((a, b) => b.date.localeCompare(a.date)).filter(r => {
     if (filterDay && r.date !== filterDay) return false;
-    if (filterPassages.length) {
-      const match = filterMode === "and" ? filterPassages.every(p => r.passages.includes(p)) : filterPassages.some(p => r.passages.includes(p));
-      if (!match) return false;
+    if (filterBook) {
+      const bookPassages = (r.passages || []).filter(p => p.startsWith(filterBook + " "));
+      if (!bookPassages.length) return false;
+      if (filterChapters.length) {
+        const chNums = bookPassages.map(p => parseInt(p.slice(filterBook.length + 1)));
+        if (!chNums.some(n => filterChapters.includes(n))) return false;
+      }
     }
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     return r.body.toLowerCase().includes(q) || r.passages.some(p => p.toLowerCase().includes(q));
   });
 
-  // All passage tags across every gleaning, for the filter pills
-  const allPassageTags = [...new Set(reflections.flatMap(r => r.passages || []))].sort();
-  function toggleFilterPassage(p) {
-    setFilterPassages(f => f.includes(p) ? f.filter(x => x !== p) : [...f, p]);
+  // Books that actually have gleanings, in canonical order
+  const booksWithGleanings = BIBLE_BOOKS.filter(b => reflections.some(r => (r.passages || []).some(p => p.startsWith(b + " "))));
+  const otBooksWithGleanings = booksWithGleanings.filter(b => BIBLE_BOOKS.indexOf(b) < 39);
+  const ntBooksWithGleanings = booksWithGleanings.filter(b => BIBLE_BOOKS.indexOf(b) >= 39);
+
+  // Chapters within the selected book that actually have gleanings — kept naturally small
+  const chaptersInBook = filterBook ? [...new Set(reflections.flatMap(r => (r.passages || []).filter(p => p.startsWith(filterBook + " ")).map(p => parseInt(p.slice(filterBook.length + 1)))))].sort((a, b) => a - b) : [];
+  function selectBook(b) {
+    setFilterBook(b === filterBook ? "" : b);
+    setFilterChapters([]); // reset chapter selection when book changes
+  }
+  function toggleFilterChapter(ch) {
+    setFilterChapters(f => f.includes(ch) ? f.filter(x => x !== ch) : [...f, ch]);
   }
   function exportGleaningsMarkdown() {
-    const heading = filterPassages.length ? `Gleanings — ${filterPassages.join(", ")}` : "Gleanings — All";
+    const filterLabel = filterBook ? filterChapters.length ? `${filterBook} ${filterChapters.join(", ")}` : filterBook : null;
+    const heading = filterLabel ? `Gleanings — ${filterLabel}` : "Gleanings — All";
     const lines = [`# ${heading}`, ``, `*Exported ${fmtDate(todayStr())}*`, ``];
     filtered.forEach(r => {
       lines.push(`## ${fmtDate(r.date)}`);
@@ -4499,7 +4513,7 @@ function JournalScreen({
       lines.push(`---`, ``);
     });
     const md = lines.join("\n");
-    const filename = filterPassages.length ? `gleanings-${filterPassages.join("-").toLowerCase().replace(/\s+/g, "-")}.md` : `gleanings-all.md`;
+    const filename = filterBook ? `gleanings-${filterLabel.toLowerCase().replace(/\s+/g, "-")}.md` : `gleanings-all.md`;
     const blob = new Blob([md], {
       type: "text/markdown"
     });
@@ -4799,7 +4813,7 @@ function JournalScreen({
       ...ss.input,
       paddingLeft: 34
     }
-  })), allPassageTags.length > 0 && /*#__PURE__*/React.createElement("div", {
+  })), booksWithGleanings.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       flexDirection: "column",
@@ -4808,25 +4822,73 @@ function JournalScreen({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
+      gap: 8,
+      alignItems: "center"
+    }
+  }, /*#__PURE__*/React.createElement("select", {
+    value: filterBook,
+    onChange: e => selectBook(e.target.value),
+    style: {
+      ...ss.input,
+      flex: 1,
+      cursor: "pointer"
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "All books"), otBooksWithGleanings.length > 0 && /*#__PURE__*/React.createElement("optgroup", {
+    label: "Old Testament"
+  }, otBooksWithGleanings.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b,
+    value: b
+  }, b))), ntBooksWithGleanings.length > 0 && /*#__PURE__*/React.createElement("optgroup", {
+    label: "New Testament"
+  }, ntBooksWithGleanings.map(b => /*#__PURE__*/React.createElement("option", {
+    key: b,
+    value: b
+  }, b)))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowExport(s => !s),
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "7px 12px",
+      display: "flex",
+      alignItems: "center",
+      gap: 4,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "upload2",
+    size: 10,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), " Export")), filterBook && chaptersInBook.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
       flexWrap: "wrap",
       gap: 6,
       alignItems: "center"
     }
-  }, allPassageTags.map(p => /*#__PURE__*/React.createElement("button", {
-    key: p,
-    onClick: () => toggleFilterPassage(p),
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      color: C.muted,
+      fontFamily: F.sans
+    }
+  }, "Chapter:"), chaptersInBook.map(ch => /*#__PURE__*/React.createElement("button", {
+    key: ch,
+    onClick: () => toggleFilterChapter(ch),
     style: {
       padding: "3px 10px",
       borderRadius: 20,
-      border: `1px solid ${filterPassages.includes(p) ? C.brown : C.border}`,
-      background: filterPassages.includes(p) ? C.brown : "white",
-      color: filterPassages.includes(p) ? "white" : C.ink,
+      border: `1px solid ${filterChapters.includes(ch) ? C.brown : C.border}`,
+      background: filterChapters.includes(ch) ? C.brown : "white",
+      color: filterChapters.includes(ch) ? "white" : C.ink,
       fontFamily: F.sans,
       fontSize: 11,
       cursor: "pointer"
     }
-  }, p)), filterPassages.length > 0 && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setFilterPassages([]),
+  }, ch)), filterChapters.length > 0 && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setFilterChapters([]),
     style: {
       padding: "3px 10px",
       fontSize: 11,
@@ -4836,53 +4898,7 @@ function JournalScreen({
       cursor: "pointer",
       fontFamily: F.sans
     }
-  }, "Clear"), filterPassages.length > 1 && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setFilterMode(m => m === "or" ? "and" : "or"),
-    title: filterMode === "or" ? "Matching any selected passage — tap for all" : "Matching all selected passages — tap for any",
-    style: {
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      padding: "3px 9px",
-      borderRadius: 20,
-      border: `1px solid ${C.border}`,
-      background: "#f9f6f2",
-      cursor: "pointer",
-      fontFamily: F.sans,
-      fontSize: 10,
-      color: C.muted
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: filterMode === "or" ? 700 : 400,
-      color: filterMode === "or" ? C.brown : C.muted
-    }
-  }, "Any"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      opacity: 0.4
-    }
-  }, "/"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontWeight: filterMode === "and" ? 700 : 400,
-      color: filterMode === "and" ? C.brown : C.muted
-    }
-  }, "All")), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowExport(s => !s),
-    style: {
-      ...ss.btnGhost,
-      fontSize: 11,
-      padding: "3px 10px",
-      display: "flex",
-      alignItems: "center",
-      gap: 4,
-      marginLeft: "auto"
-    }
-  }, /*#__PURE__*/React.createElement(Icon, {
-    name: "upload2",
-    size: 10,
-    color: "#6b5f54",
-    strokeWidth: 1.75
-  }), " Export")), showExport && /*#__PURE__*/React.createElement("div", {
+  }, "Clear")), showExport && /*#__PURE__*/React.createElement("div", {
     style: {
       ...ss.card,
       padding: "10px 12px",
@@ -4896,7 +4912,7 @@ function JournalScreen({
       color: C.ink,
       fontFamily: F.sans
     }
-  }, "Export ", filtered.length, " gleaning", filtered.length !== 1 ? "s" : "", filterPassages.length ? ` tagged ${filterMode === "and" ? "all of" : "any of"}: ${filterPassages.join(", ")}` : "", " as markdown"), /*#__PURE__*/React.createElement("label", {
+  }, "Export ", filtered.length, " gleaning", filtered.length !== 1 ? "s" : "", filterBook ? ` from ${filterBook}${filterChapters.length ? ` ${filterChapters.join(", ")}` : ""}` : "", " as markdown"), /*#__PURE__*/React.createElement("label", {
     style: {
       display: "flex",
       alignItems: "center",
