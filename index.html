@@ -596,7 +596,10 @@ async function dbPutMany(store, items) {
       }).then(({
         error
       }) => {
-        if (error) console.warn("dbPutMany cloud error", store, error.message);
+        if (error) {
+          console.warn("dbPutMany cloud error", store, error.message);
+          logSyncError(store, error.message);
+        }
       });
     });
   }
@@ -620,12 +623,24 @@ let _supa = null;
 let _authUser = null;
 let _syncStatus = "idle"; // "idle" | "syncing" | "error"
 let _syncListeners = [];
+let _lastSyncErrors = []; // collected error messages from the most recent sync attempt
+let _lastSyncTime = null; // ISO timestamp of last successful sync
+
 function onSyncChange(fn) {
   _syncListeners.push(fn);
 }
 function notifySync(status) {
   _syncStatus = status;
   _syncListeners.forEach(fn => fn(status));
+}
+function logSyncError(context, msg) {
+  _lastSyncErrors.push(`${context}: ${msg}`);
+}
+function clearSyncErrors() {
+  _lastSyncErrors = [];
+}
+function getSyncErrors() {
+  return _lastSyncErrors;
 }
 async function getSupabase() {
   if (_supa) return _supa;
@@ -726,9 +741,13 @@ async function cloudUpsert(store, record) {
     } = await supa.from(table).upsert(row, {
       onConflict: "id"
     });
-    if (error) console.warn("cloudUpsert error", store, error.message);
+    if (error) {
+      console.warn("cloudUpsert error", store, error.message);
+      logSyncError(store, error.message);
+    }
   } catch (e) {
     console.warn("cloudUpsert exception", e);
+    logSyncError(store, e.message || String(e));
   }
 }
 
@@ -742,9 +761,13 @@ async function cloudDelete(store, id) {
     const {
       error
     } = await supa.from(table).delete().eq("id", id).eq("user_id", _authUser.id);
-    if (error) console.warn("cloudDelete error", store, error.message);
+    if (error) {
+      console.warn("cloudDelete error", store, error.message);
+      logSyncError(store, error.message);
+    }
   } catch (e) {
     console.warn("cloudDelete exception", e);
+    logSyncError(store, e.message || String(e));
   }
 }
 
@@ -805,6 +828,7 @@ async function syncFromCloud(refreshCallback) {
     if (refreshCallback) refreshCallback();
   } catch (e) {
     console.error("syncFromCloud error", e);
+    logSyncError("sync", e.message || String(e));
     notifySync("error");
   }
 }
@@ -813,6 +837,7 @@ async function syncFromCloud(refreshCallback) {
 // Only pushes records that are newer locally than on the server (or don't exist yet)
 async function pushAllToCloud() {
   if (!_authUser) return;
+  clearSyncErrors();
   notifySync("syncing");
   try {
     const supa = await getSupabase();
@@ -836,7 +861,10 @@ async function pushAllToCloud() {
           } = await supa.from(table).upsert(rows, {
             onConflict: "id"
           });
-          if (error) console.warn("pushAllToCloud insert error", table, error.message);
+          if (error) {
+            console.warn("pushAllToCloud insert error", table, error.message);
+            logSyncError(table, error.message);
+          }
         }
       } else {
         // Last-write-wins — only push local records that are newer than remote
@@ -861,13 +889,18 @@ async function pushAllToCloud() {
           } = await supa.from(table).upsert(rows, {
             onConflict: "id"
           });
-          if (error) console.warn("pushAllToCloud upsert error", table, error.message);
+          if (error) {
+            console.warn("pushAllToCloud upsert error", table, error.message);
+            logSyncError(table, error.message);
+          }
         }
       }
     }
+    _lastSyncTime = new Date().toISOString();
     notifySync("idle");
   } catch (e) {
     console.error("pushAllToCloud error", e);
+    logSyncError("push", e.message || String(e));
     notifySync("error");
   }
 }
@@ -9164,6 +9197,40 @@ function SettingsScreen({
 }) {
   const [importMsg, setImportMsg] = useState(null);
   const importRef = useRef(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // { ok: bool, msg: string }
+
+  async function handleSyncNow() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      await pushAllToCloud();
+      await syncFromCloud(refresh);
+      const errors = getSyncErrors();
+      if (errors.length > 0) {
+        setSyncResult({
+          ok: false,
+          msg: errors.join(" · ")
+        });
+      } else {
+        const t = new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        setSyncResult({
+          ok: true,
+          msg: `Synced successfully at ${t}`
+        });
+      }
+    } catch (e) {
+      setSyncResult({
+        ok: false,
+        msg: e.message || String(e)
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   // ── Export helpers ───────────────────────────────────────────────────────
   function downloadFile(filename, content, mime = "text/plain") {
@@ -9448,23 +9515,22 @@ function SettingsScreen({
       gap: 8
     }
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      await pushAllToCloud();
-      await syncFromCloud(refresh);
-    },
+    onClick: handleSyncNow,
+    disabled: syncing,
     style: {
       ...ss.btnGhost,
       display: "flex",
       alignItems: "center",
       gap: 5,
-      fontSize: 12
+      fontSize: 12,
+      opacity: syncing ? 0.6 : 1
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "database",
     size: 12,
     color: "#6b5f54",
     strokeWidth: 1.75
-  }), " Sync now"), /*#__PURE__*/React.createElement("button", {
+  }), " ", syncing ? "Syncing…" : "Sync now"), /*#__PURE__*/React.createElement("button", {
     onClick: async () => {
       await signOut();
       window.location.reload();
@@ -9475,7 +9541,51 @@ function SettingsScreen({
       color: C.red,
       borderColor: C.red
     }
-  }, "Sign out"))) : /*#__PURE__*/React.createElement("p", {
+  }, "Sign out")), syncResult && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 12px",
+      borderRadius: 8,
+      background: syncResult.ok ? "#edfaf1" : "#fdf0ef",
+      border: `1px solid ${syncResult.ok ? C.green : C.red}`,
+      display: "flex",
+      flexDirection: "column",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("p", {
+    style: {
+      fontSize: 12,
+      fontFamily: F.sans,
+      color: syncResult.ok ? C.green : C.red,
+      lineHeight: 1.5,
+      wordBreak: "break-word"
+    }
+  }, syncResult.ok ? "✓ " : "✗ ", syncResult.msg), !syncResult.ok && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      navigator.clipboard?.writeText(syncResult.msg);
+      setSyncResult(r => ({
+        ...r,
+        copied: true
+      }));
+      setTimeout(() => setSyncResult(r => r ? {
+        ...r,
+        copied: false
+      } : r), 1500);
+    },
+    style: {
+      ...ss.btnGhost,
+      fontSize: 11,
+      padding: "4px 10px",
+      alignSelf: "flex-start",
+      display: "flex",
+      alignItems: "center",
+      gap: 4
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "copy",
+    size: 11,
+    color: "#6b5f54",
+    strokeWidth: 1.75
+  }), syncResult.copied ? "Copied!" : "Copy error text"))) : /*#__PURE__*/React.createElement("p", {
     style: {
       fontFamily: F.sans,
       fontSize: 13,
