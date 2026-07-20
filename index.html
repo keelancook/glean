@@ -564,6 +564,21 @@ async function dbGetAll(store) {
     return [];
   }
 }
+// ── Normalize a record before sending to Supabase ─────────────────────────────
+// Certain columns are NOT NULL DEFAULT '{}' (tags on prayer_requests, sermons,
+// reflections). If a batch mixes rows that have this key with rows that don't,
+// Supabase fills the missing ones with null instead of the column default,
+// which violates the NOT NULL constraint and fails the entire batch. Always
+// forcing the key present (even as an empty array) keeps every batch uniform.
+function normalizeForCloud(store, record) {
+  if (store === "prayer_requests" || store === "sermons" || store === "reflections") {
+    return {
+      ...record,
+      tags: record.tags || []
+    };
+  }
+  return record;
+}
 async function dbPut(store, item) {
   const db = await openDB();
   await new Promise((res, rej) => {
@@ -588,7 +603,7 @@ async function dbPutMany(store, items) {
     getSupabase().then(supa => {
       const table = SD_TABLES[store];
       const rows = items.map(r => ({
-        ...r,
+        ...normalizeForCloud(store, r),
         user_id: _authUser.id
       }));
       supa.from(table).upsert(rows, {
@@ -733,7 +748,7 @@ async function cloudUpsert(store, record) {
     const table = SD_TABLES[store];
     if (!table) return;
     const row = {
-      ...record,
+      ...normalizeForCloud(store, record),
       user_id: _authUser.id
     };
     const {
@@ -853,7 +868,7 @@ async function pushAllToCloud() {
         const CHUNK = 200;
         for (let i = 0; i < toInsert.length; i += CHUNK) {
           const rows = toInsert.slice(i, i + CHUNK).map(r => ({
-            ...r,
+            ...normalizeForCloud(store, r),
             user_id: _authUser.id
           }));
           const {
@@ -881,7 +896,7 @@ async function pushAllToCloud() {
         const CHUNK = 200;
         for (let i = 0; i < toPush.length; i += CHUNK) {
           const rows = toPush.slice(i, i + CHUNK).map(r => ({
-            ...r,
+            ...normalizeForCloud(store, r),
             user_id: _authUser.id
           }));
           const {
